@@ -1,0 +1,25 @@
+# Binaries
+*.exe
+*.dll
+/bin/
+/dist/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+*.key
+*.pem
+
+# Logs
+*.log
+
+# Local CockroachDB node data
+/cockroach-data/
