@@ -7,6 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// listDatabases handles the list_databases tool.
 func (h *ToolHandlers) listDatabases(
 	ctx context.Context, _ *mcp.CallToolRequest, params ListDatabasesParams,
 ) (*mcp.CallToolResult, any, error) {

@@ -2,14 +2,16 @@ package tools
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/cockroachdb/cockroachdb-mcp-server/db"
 	"github.com/cockroachdb/errors"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const defaultListDatabasesLimit int64 = 100
+const (
+	defaultListDatabasesLimit int64 = 100
+	defaultListTablesLimit    int64 = 100
+)
 
 // MCPQueryResult is the response shape returned by read tools.
 type MCPQueryResult struct {
@@ -39,12 +41,9 @@ func queryResultToMCP(qr *db.QueryResult) (*mcp.CallToolResult, error) {
 	}, nil
 }
 
-// applyLimitOffset appends LIMIT and OFFSET clauses. Non-positive limits and
-// negative offsets are rejected, and limits are capped at the server-configured
-// MaxRowsCount.
-//
-// TODO(rahulcrl): migrate to db.SafeFormat once it lands in a follow-up PR,
-// so all SQL construction in the codebase goes through one templating path.
+// applyLimitOffset appends LIMIT and OFFSET clauses via db.SafeFormat.
+// Non-positive limits and negative offsets are rejected, and limits are capped
+// at the server-configured MaxRowsCount.
 func (h *ToolHandlers) applyLimitOffset(query string, limit, offset *int64, defaultLimit int64) (string, error) {
 	if limit != nil && *limit <= 0 {
 		return "", errors.New("LIMIT must be a positive integer")
@@ -61,7 +60,7 @@ func (h *ToolHandlers) applyLimitOffset(query string, limit, offset *int64, defa
 		offsetVal = *offset
 	}
 	if offsetVal > 0 {
-		return fmt.Sprintf("%s LIMIT %d OFFSET %d", query, limitVal, offsetVal), nil
+		return db.SafeFormat("%1 LIMIT %2 OFFSET %3", db.SQL(query), limitVal, offsetVal)
 	}
-	return fmt.Sprintf("%s LIMIT %d", query, limitVal), nil
+	return db.SafeFormat("%1 LIMIT %2", db.SQL(query), limitVal)
 }

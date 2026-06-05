@@ -10,3 +10,17 @@ type PaginationParams struct {
 type ListDatabasesParams struct {
 	PaginationParams
 }
+
+// ListTablesParams contains parameters for the list_tables tool.
+type ListTablesParams struct {
+	Database string `json:"database" jsonschema:"Database whose tables are listed."`
+	PaginationParams
+}
+
+// TableSchemaParams contains parameters for the get_table_schema tool. Schema
+// defaults to "public" when empty.
+type TableSchemaParams struct {
+	Database string `json:"database" jsonschema:"Database containing the table."`
+	Schema   string `json:"schema,omitempty" jsonschema:"Schema name. Defaults to 'public' when omitted."`
+	Table    string `json:"table" jsonschema:"Table name."`
+}

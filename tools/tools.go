@@ -36,4 +36,14 @@ func (h *ToolHandlers) RegisterTools(server *mcp.Server) {
 		Name:        "list_databases",
 		Description: "List all databases in the CockroachDB cluster.",
 	}, h.listDatabases)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_tables",
+		Description: "List all tables in a database.",
+	}, h.listTables)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_table_schema",
+		Description: "Get detailed schema information for a table including columns and indexes.",
+	}, h.getTableSchema)
 }

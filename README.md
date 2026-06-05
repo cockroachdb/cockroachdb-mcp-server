@@ -69,6 +69,8 @@ export CRDB_DATABASE_URL="postgresql://user:pass@host:26257/defaultdb?sslmode=ve
 | Tool | Description |
 | --- | --- |
 | `list_databases` | List all databases in the cluster. Accepts optional `limit` (default 100, max 10000) and `offset`. |
+| `list_tables` | List tables in a database. Required: `database`. Optional: `limit`, `offset`. |
+| `get_table_schema` | Return the `CREATE TABLE` statement for a table. Required: `database`, `table`. Optional: `schema` (defaults to `public`). |
 
 Additional read and write tools land in follow-up PRs.
 
