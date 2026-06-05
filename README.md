@@ -1,76 +1,90 @@
 # CockroachDB MCP Server
 
-A Model Context Protocol (MCP) server, that provides tools for interacting with CockroachDB.
+A [Model Context Protocol](https://modelcontextprotocol.io) server that exposes
+CockroachDB to AI agents as a set of typed tools.
 
-## Project Structure
+## Project structure
 
 ```
 cockroachdb-mcp-server/
-├── cmd/
-│   ├── crdb-mcp-dev/        # Dev server entrypoint
-├── internal/
-│   ├── auth/                # Authentication (OAuth/JWT/API key)
-│   ├── config/              # Configuration loader
-│   ├── db/                  # DB client, pooling, guardrails
-│   ├── log/                 # Logging and audit
-│   ├── otel/                # OpenTelemetry metrics/tracing
-│   ├── rate/                # Rate limiting
-│   └── tools/               # MCP tool handlers
-│       ├── dev/             # Dev server tools
-│       └── shared/          # Shared schemas/helpers
-└── README.md
+├── main.go        # stdio entrypoint, --version, graceful shutdown
+├── config/        # env-driven configuration and DSN builder
+├── db/            # pgx pool and SQL execution
+└── tools/         # MCP tool handlers and JSON input schemas
 ```
 
-## Getting Started
+## Prerequisites
 
-### Prerequisites
+- Go 1.25+
+- A reachable CockroachDB cluster (local or CockroachCloud)
 
-- Go 1.24 or later
-- CockroachDB cluster (local or cloud)
-
-### Installation
+## Build
 
 ```bash
-# Clone the repository
-git clone https://github.com/cockroachdb/cockroachdb-mcp-server.git
-cd cockroachdb-mcp-server
-
-# Build the server
-go build -o bin/crdb-mcp-dev ./cmd/crdb-mcp-dev
+go build -o bin/cockroachdb-mcp-server .
+./bin/cockroachdb-mcp-server --version
 ```
 
-### Quick Start
+## Configuration
+
+All configuration is via environment variables. `sslmode` must be `require`,
+`verify-ca`, or `verify-full` in both auth modes.
+
+**Auth - choose one:**
+
+| Variable | Purpose |
+| --- | --- |
+| `CRDB_DATABASE_URL` | Full libpq connection string (preferred when set) |
+
+Or the cert-based vars:
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `CRDB_HOST` | Hostname | required |
+| `CRDB_PORT` | Port | `26257` |
+| `CRDB_USERNAME` | SQL user | required |
+| `CRDB_PWD` | Password (optional) | - |
+| `CRDB_SSL_MODE` | `require`, `verify-ca`, or `verify-full` | `verify-full` |
+| `CRDB_SSL_CA_PATH` | CA cert path (required for `verify-ca` / `verify-full`) | - |
+| `CRDB_SSL_CERTFILE` | Client cert path | required |
+| `CRDB_SSL_KEYFILE` | Client key path | required |
+
+**Behaviour:**
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `CRDB_MCP_QUERY_TIMEOUT` | Per-query timeout (Go duration, e.g. `30s`) | `30s` |
+| `CRDB_MCP_MAX_ROWS_COUNT` | Caps the max LIMIT a list-style tool will issue to CRDB. Must be a positive integer. | `10000` |
+| `CRDB_MCP_ENABLE_WRITE_QUERIES` | Gates the write tools (`create_database`, `create_table`, `insert_rows`) that land in a follow-up PR. `false` keeps the server read-only | `false` |
+
+## Run
 
 ```bash
-# Set database connection
-export CRDB_DATABASE_URL="postgresql://root@localhost:26257/defaultdb?sslmode=disable"
-
-# Run in STDIO mode (default)
-./bin/crdb-mcp-dev
+export CRDB_DATABASE_URL="postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full"
+./bin/cockroachdb-mcp-server
 ```
 
-### Testing with MCP Inspector
+### Tools shipped today
 
-The [MCP Inspector](https://github.com/modelcontextprotocol/inspector) is a developer tool for testing and debugging MCP servers.
+| Tool | Description |
+| --- | --- |
+| `list_databases` | List all databases in the cluster. Accepts optional `limit` (default 100, max 10000) and `offset`. |
+
+Additional read and write tools land in follow-up PRs.
+
+## Test
 
 ```bash
-# Install MCP Inspector
+go test ./...
+```
+
+### With MCP Inspector
+
+```bash
 npm install -g @modelcontextprotocol/inspector
-
-# Run the server with MCP Inspector
-export CRDB_DATABASE_URL="postgresql://root@localhost:26257/defaultdb?sslmode=disable"
-mcp-inspector ./bin/crdb-mcp-dev
+mcp-inspector ./bin/cockroachdb-mcp-server
 ```
-
-This will:
-1. Start the MCP server
-2. Launch a web interface at `http://localhost:5173`
-3. Allow you to interactively test tools
 
 ## License
 
-[License TBD]
-
-## Contributing
-
-[Contributing guidelines TBD]
+[Apache License 2.0](LICENSE)
