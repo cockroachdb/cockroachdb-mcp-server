@@ -8,10 +8,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const (
-	defaultListDatabasesLimit int64 = 100
-	defaultListTablesLimit    int64 = 100
-)
+// defaultRowLimit is the LIMIT applied to list-style tools when the caller
+// does not supply one. The hard ceiling is config.MaxRowsCount.
+const defaultRowLimit int64 = 100
 
 // MCPQueryResult is the response shape returned by read tools.
 type MCPQueryResult struct {
@@ -44,14 +43,14 @@ func queryResultToMCP(qr *db.QueryResult) (*mcp.CallToolResult, error) {
 // applyLimitOffset appends LIMIT and OFFSET clauses via db.SafeFormat.
 // Non-positive limits and negative offsets are rejected, and limits are capped
 // at the server-configured MaxRowsCount.
-func (h *ToolHandlers) applyLimitOffset(query string, limit, offset *int64, defaultLimit int64) (string, error) {
+func (h *ToolHandlers) applyLimitOffset(query string, limit, offset *int64) (string, error) {
 	if limit != nil && *limit <= 0 {
 		return "", errors.New("LIMIT must be a positive integer")
 	}
 	if offset != nil && *offset < 0 {
 		return "", errors.New("OFFSET must be zero or positive")
 	}
-	limitVal := defaultLimit
+	limitVal := defaultRowLimit
 	if limit != nil {
 		limitVal = min(*limit, h.cfg.MaxRowsCount)
 	}

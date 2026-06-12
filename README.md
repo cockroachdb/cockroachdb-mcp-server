@@ -68,9 +68,13 @@ export CRDB_DATABASE_URL="postgresql://user:pass@host:26257/defaultdb?sslmode=ve
 
 | Tool | Description |
 | --- | --- |
-| `list_databases` | List all databases in the cluster. Accepts optional `limit` (default 100, max 10000) and `offset`. |
+| `list_databases` | List all databases in the CockroachDB cluster. Accepts optional `limit` (default 100, max 10000) and `offset`. |
 | `list_tables` | List tables in a database. Required: `database`. Optional: `limit`, `offset`. |
 | `get_table_schema` | Return the `CREATE TABLE` statement for a table. Required: `database`, `table`. Optional: `schema` (defaults to `public`). |
+| `show_running_queries` | List currently executing CockroachDB cluster statements, ordered by start time descending. Optional `limit` (default 100, max 10000) and `offset`. |
+| `get_cluster` | Return CockroachDB cluster identity and version metadata: cluster_id, cluster_name, binary_version, active_version. |
+| `list_sql_users` | List SQL users defined in the CockroachDB cluster. Optional `limit` (default 100, max 10000) and `offset`. |
+| `list_cluster_nodes` | List CockroachDB cluster nodes with address, liveness, and locality. Requires admin or VIEWCLUSTERMETADATA on the connecting role. |
 
 Additional read and write tools land in follow-up PRs.
 

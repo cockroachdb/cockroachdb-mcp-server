@@ -24,3 +24,13 @@ type TableSchemaParams struct {
 	Schema   string `json:"schema,omitempty" jsonschema:"Schema name. Defaults to 'public' when omitted."`
 	Table    string `json:"table" jsonschema:"Table name."`
 }
+
+// ShowRunningQueriesParams contains parameters for the show_running_queries tool.
+type ShowRunningQueriesParams struct {
+	PaginationParams
+}
+
+// ListSQLUsersParams contains parameters for the list_sql_users tool.
+type ListSQLUsersParams struct {
+	PaginationParams
+}
