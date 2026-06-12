@@ -56,8 +56,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0 # needed for new-from-merge-base to find the base ref
 
       - uses: actions/setup-go@v6
         with:

@@ -1,3 +1,4 @@
+// Package db provides SQL execution against CockroachDB for the MCP server.
 package db
 
 import (
@@ -6,13 +7,13 @@ import (
 	"github.com/cockroachdb/cockroachdb-mcp-server/config"
 )
 
-// DBManager is the high-level facade used by MCP tool handlers.
-type DBManager struct {
+// Manager is the high-level facade used by MCP tool handlers.
+type Manager struct {
 	adapter *Adapter
 }
 
-// NewDBManager opens an adapter using the provided server config.
-func NewDBManager(ctx context.Context, cfg *config.Config) (*DBManager, error) {
+// NewManager opens an adapter using the provided server config.
+func NewManager(ctx context.Context, cfg *config.Config) (*Manager, error) {
 	adapter, err := NewAdapter(ctx, Config{
 		DSN:          cfg.DSN(),
 		QueryTimeout: cfg.QueryTimeout,
@@ -20,11 +21,11 @@ func NewDBManager(ctx context.Context, cfg *config.Config) (*DBManager, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DBManager{adapter: adapter}, nil
+	return &Manager{adapter: adapter}, nil
 }
 
 // Close releases the underlying pool.
-func (m *DBManager) Close() {
+func (m *Manager) Close() {
 	if m.adapter != nil {
 		m.adapter.Close()
 	}
@@ -37,6 +38,6 @@ type QueryResult struct {
 }
 
 // Query runs a query against the bootstrap database.
-func (m *DBManager) Query(ctx context.Context, sql string) (*QueryResult, error) {
+func (m *Manager) Query(ctx context.Context, sql string) (*QueryResult, error) {
 	return m.adapter.Query(ctx, sql)
 }

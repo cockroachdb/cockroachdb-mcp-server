@@ -1,3 +1,4 @@
+// Package tools implements the MCP tools served by the cockroachdb-mcp-server.
 package tools
 
 import (
@@ -9,7 +10,7 @@ import (
 )
 
 // DBManager is the narrow database surface that tool handlers depend on. The
-// real *db.DBManager satisfies it; tests use a fake.
+// real *db.Manager satisfies it; tests use a fake.
 type DBManager interface {
 	Query(ctx context.Context, sql string) (*db.QueryResult, error)
 }

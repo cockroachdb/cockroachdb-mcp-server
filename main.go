@@ -1,3 +1,4 @@
+// cockroachdb-mcp-server is the Model Context Protocol server for CockroachDB.
 package main
 
 import (
@@ -7,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"os/signal"
 	"syscall"
 
@@ -26,7 +26,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 	if *showVersion {
-		fmt.Fprintf(os.Stdout, "%s %s\n", serverName, serverVersion)
+		fmt.Printf("%s %s\n", serverName, serverVersion)
 		return
 	}
 
@@ -44,7 +44,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	dm, err := db.NewDBManager(ctx, cfg)
+	dm, err := db.NewManager(ctx, cfg)
 	if err != nil {
 		return errors.Wrap(err, "initialize database manager")
 	}
