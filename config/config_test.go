@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testBearerToken = "test-bearer-token"
+
 func TestLoad(t *testing.T) {
 	certPath, keyPath, caPath := writeTempCerts(t)
 
@@ -92,6 +94,126 @@ func TestLoad(t *testing.T) {
 		_, err := Load()
 		require.Error(t, err, "expected error for invalid bool")
 	})
+
+	t.Run("http transport requires bearer token", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envTransport: TransportHTTP})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "expected error when http transport is set without bearer token")
+		require.Containsf(t, err.Error(), envBearerToken, "error should mention bearer token env: %v", err)
+	})
+
+	t.Run("http transport with short bearer token is rejected", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{
+			envTransport:         TransportHTTP,
+			envBearerToken:       "too-short",
+			envAllowInsecureHTTP: "true",
+		})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "at least 16")
+	})
+
+	t.Run("http transport with bearer token and tls is accepted", func(t *testing.T) {
+		tlsCert, tlsKey := writeTempTLS(t)
+		env := mergeEnv(baseEnv, map[string]string{
+			envTransport:   TransportHTTP,
+			envBearerToken: testBearerToken,
+			envTLSCert:     tlsCert,
+			envTLSKey:      tlsKey,
+		})
+		setEnv(t, env)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, TransportHTTP, cfg.Transport)
+		require.Equal(t, testBearerToken, cfg.BearerToken)
+		require.True(t, cfg.TLSEnabled())
+	})
+
+	t.Run("http transport without tls is rejected", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{
+			envTransport:   TransportHTTP,
+			envBearerToken: testBearerToken,
+		})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "http mode without TLS should require explicit opt-in")
+		require.Containsf(t, err.Error(), envAllowInsecureHTTP, "error should name the override: %v", err)
+	})
+
+	t.Run("http transport with insecure opt-in is accepted", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{
+			envTransport:         TransportHTTP,
+			envBearerToken:       testBearerToken,
+			envAllowInsecureHTTP: "true",
+		})
+		setEnv(t, env)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.True(t, cfg.AllowInsecureHTTP)
+		require.False(t, cfg.TLSEnabled())
+	})
+
+	t.Run("http transport with only tls cert is rejected", func(t *testing.T) {
+		tlsCert := t.TempDir()
+		env := mergeEnv(baseEnv, map[string]string{
+			envTransport:   TransportHTTP,
+			envBearerToken: testBearerToken,
+			envTLSCert:     tlsCert,
+		})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "expected error when only TLS cert is set")
+		require.Containsf(t, err.Error(), envTLSKey, "error should mention missing key env: %v", err)
+	})
+
+	t.Run("http transport with only tls key is rejected", func(t *testing.T) {
+		tlsKey := t.TempDir()
+		env := mergeEnv(baseEnv, map[string]string{
+			envTransport:   TransportHTTP,
+			envBearerToken: testBearerToken,
+			envTLSKey:      tlsKey,
+		})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "expected error when only TLS key is set")
+		require.Containsf(t, err.Error(), envTLSCert, "error should mention missing cert env: %v", err)
+	})
+
+	t.Run("http transport with tls cert as directory is rejected", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{
+			envTransport:   TransportHTTP,
+			envBearerToken: testBearerToken,
+			envTLSCert:     t.TempDir(), // directory, not a regular file
+			envTLSKey:      t.TempDir(),
+		})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "expected error when TLS path is a directory")
+		require.Contains(t, err.Error(), "is not a regular file")
+	})
+
+	t.Run("http transport with missing tls cert file is rejected", func(t *testing.T) {
+		tlsKey := t.TempDir()
+		env := mergeEnv(baseEnv, map[string]string{
+			envTransport:   TransportHTTP,
+			envBearerToken: testBearerToken,
+			envTLSCert:     "/nonexistent/tls.crt",
+			envTLSKey:      tlsKey,
+		})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "expected error for missing TLS cert file")
+	})
+
+	t.Run("unknown transport is rejected", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envTransport: "websocket"})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "expected error for unknown transport")
+		require.Containsf(t, err.Error(), "websocket", "error should name the offending value: %v", err)
+	})
 }
 
 func TestDSN(t *testing.T) {
@@ -146,7 +268,8 @@ func clearEnv(t *testing.T) {
 	for _, k := range []string{
 		envDatabaseURL, envHost, envPort, envUser, envPassword, envSSLMode,
 		envCAPath, envCertFile, envKeyFile, envEnableWriteQueries, envQueryTimeout,
-		envMaxRowsCount, envAllowPasswordAuth,
+		envMaxRowsCount, envTransport, envHTTPListenAddr, envBearerToken,
+		envTLSCert, envTLSKey, envAllowInsecureHTTP, envAllowPasswordAuth,
 	} {
 		t.Setenv(k, "")
 	}
@@ -206,6 +329,17 @@ func writeTempCerts(t *testing.T) (cert, key, ca string) {
 	key = dir + "/client.key"
 	ca = dir + "/ca.crt"
 	for _, p := range []string{cert, key, ca} {
+		require.NoErrorf(t, writeFile(p, "test"), "write %s", p)
+	}
+	return
+}
+
+func writeTempTLS(t *testing.T) (cert, key string) {
+	t.Helper()
+	dir := t.TempDir()
+	cert = dir + "/tls.crt"
+	key = dir + "/tls.key"
+	for _, p := range []string{cert, key} {
 		require.NoErrorf(t, writeFile(p, "test"), "write %s", p)
 	}
 	return
