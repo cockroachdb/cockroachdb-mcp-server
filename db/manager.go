@@ -17,6 +17,7 @@ func NewManager(ctx context.Context, cfg *config.Config) (*Manager, error) {
 	adapter, err := NewAdapter(ctx, Config{
 		DSN:          cfg.DSN(),
 		QueryTimeout: cfg.QueryTimeout,
+		ReadOnly:     !cfg.EnableWriteQueries,
 	})
 	if err != nil {
 		return nil, err
@@ -40,4 +41,10 @@ type QueryResult struct {
 // Query runs a query against the bootstrap database.
 func (m *Manager) Query(ctx context.Context, sql string) (*QueryResult, error) {
 	return m.adapter.Query(ctx, sql)
+}
+
+// Exec runs a non-result-returning statement (DDL/DML) and returns the
+// number of rows affected.
+func (m *Manager) Exec(ctx context.Context, sql string) (int64, error) {
+	return m.adapter.Exec(ctx, sql)
 }

@@ -78,6 +78,9 @@ export CRDB_DATABASE_URL="postgresql://user:pass@host:26257/defaultdb?sslmode=ve
 | `select_query` | Execute a single agent-supplied SELECT (parser-validated). A default LIMIT of 100 is appended when none is supplied; the cap is `CRDB_MCP_MAX_ROWS_COUNT`. |
 | `explain_query` | Return the EXPLAIN plan for an agent-supplied SQL statement (parser-validated) without executing it. `EXPLAIN ANALYZE` (and `EXPLAIN ANALYZE (DEBUG)`) is rejected. `EXPLAIN` with display options (`VERBOSE`, `DISTSQL`, `TYPES`, `OPT`, etc.) is passed through. |
 | `show_statement` | Execute an agent-supplied SHOW statement (parser-validated) such as `SHOW SCHEMAS`, `SHOW INDEXES`, `SHOW REGIONS`. Optional `limit` (default 100, max 10000) and `offset`. |
+| `create_database` | Create a database. Required: `name`. Requires `CRDB_MCP_ENABLE_WRITE_QUERIES=true`. |
+| `create_table` | Execute a single `CREATE TABLE` statement (parser-validated). Required: `statement`. Requires `CRDB_MCP_ENABLE_WRITE_QUERIES=true`. |
+| `insert_rows` | Execute a single `INSERT` statement (parser-validated) and return rows affected. Required: `statement`. Requires `CRDB_MCP_ENABLE_WRITE_QUERIES=true`. |
 
 Grant the connecting SQL role only the privileges the registered tools need. Avoid admin and write privileges unless write tools are explicitly registered.
 

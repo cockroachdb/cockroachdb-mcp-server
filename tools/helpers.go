@@ -162,6 +162,17 @@ type MCPQueryResult struct {
 	Rows []json.RawMessage `json:"rows"`
 }
 
+// writeOK renders a write-tool success payload as an MCP tool response.
+func writeOK(payload map[string]any) (*mcp.CallToolResult, any, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "marshal write result")
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
+	}, nil, nil
+}
+
 // queryResultToMCP renders a db.QueryResult as an MCP tool response.
 func queryResultToMCP(qr *db.QueryResult) (*mcp.CallToolResult, error) {
 	rows := make([]json.RawMessage, 0, len(qr.Rows))

@@ -50,3 +50,19 @@ type ShowStatementParams struct {
 	Query string `json:"query" jsonschema:"A single SHOW statement (e.g. SHOW SCHEMAS, SHOW INDEXES, SHOW REGIONS). A default LIMIT is appended, capped at CRDB_MCP_MAX_ROWS_COUNT."`
 	PaginationParams
 }
+
+// CreateDatabaseParams contains parameters for the create_database tool.
+type CreateDatabaseParams struct {
+	Name        string `json:"name" jsonschema:"Database name to create."`
+	IfNotExists bool   `json:"if_not_exists,omitempty" jsonschema:"When true, the statement is a no-op if the database already exists."`
+}
+
+// CreateTableParams contains parameters for the create_table tool.
+type CreateTableParams struct {
+	Statement string `json:"statement" jsonschema:"A single CREATE TABLE statement. Qualify the table with a database when not using the connection's default database."`
+}
+
+// InsertRowsParams contains parameters for the insert_rows tool.
+type InsertRowsParams struct {
+	Statement string `json:"statement" jsonschema:"A single INSERT statement. RETURNING clauses are rejected; use select_query to read back rows. Qualify the table with a database when not using the connection's default database."`
+}

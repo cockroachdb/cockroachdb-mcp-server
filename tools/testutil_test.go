@@ -15,6 +15,11 @@ func newHandlers(dm DBManager) *ToolHandlers {
 	return NewToolHandlers(dm, &config.Config{MaxRowsCount: 10000})
 }
 
+// newWriteHandlers is newHandlers with write tools enabled.
+func newWriteHandlers(dm DBManager) *ToolHandlers {
+	return NewToolHandlers(dm, &config.Config{MaxRowsCount: 10000, EnableWriteQueries: true})
+}
+
 func textOf(t *testing.T, res *mcp.CallToolResult) string {
 	t.Helper()
 	require.NotNil(t, res, "nil call tool result")
@@ -26,12 +31,19 @@ func textOf(t *testing.T, res *mcp.CallToolResult) string {
 // fakeQuerier is a test double for the DBManager interface that records the
 // SQL statements it receives and returns a canned result or error.
 type fakeQuerier struct {
-	queries []string
-	result  *db.QueryResult
-	err     error
+	queries      []string
+	execs        []string
+	result       *db.QueryResult
+	rowsAffected int64
+	err          error
 }
 
 func (f *fakeQuerier) Query(_ context.Context, sql string) (*db.QueryResult, error) {
 	f.queries = append(f.queries, sql)
 	return f.result, f.err
+}
+
+func (f *fakeQuerier) Exec(_ context.Context, sql string) (int64, error) {
+	f.execs = append(f.execs, sql)
+	return f.rowsAffected, f.err
 }
