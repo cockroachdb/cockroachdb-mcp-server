@@ -34,3 +34,19 @@ type ShowRunningQueriesParams struct {
 type ListSQLUsersParams struct {
 	PaginationParams
 }
+
+// SelectQueryParams contains parameters for the select_query tool.
+type SelectQueryParams struct {
+	Query string `json:"query" jsonschema:"A single SELECT statement. A default LIMIT is appended when none is supplied, capped at CRDB_MCP_MAX_ROWS_COUNT."`
+}
+
+// ExplainQueryParams contains parameters for the explain_query tool.
+type ExplainQueryParams struct {
+	Query string `json:"query" jsonschema:"A single SELECT statement. The server prefixes EXPLAIN and returns the plan without executing the query."`
+}
+
+// ShowStatementParams contains parameters for the show_statement tool.
+type ShowStatementParams struct {
+	Query string `json:"query" jsonschema:"A single SHOW statement (e.g. SHOW SCHEMAS, SHOW INDEXES, SHOW REGIONS). A default LIMIT is appended, capped at CRDB_MCP_MAX_ROWS_COUNT."`
+	PaginationParams
+}

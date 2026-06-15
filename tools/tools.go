@@ -66,4 +66,19 @@ func (h *ToolHandlers) RegisterTools(server *mcp.Server) {
 		Name:        "list_cluster_nodes",
 		Description: "List CockroachDB cluster nodes with address, liveness, and locality. Requires admin or VIEWCLUSTERMETADATA.",
 	}, h.listClusterNodes)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "select_query",
+		Description: "Execute a single SELECT statement. DML (INSERT/UPDATE/DELETE/UPSERT) and DDL are rejected, including when smuggled through CTEs, bracket subqueries, or nested SELECTs. A default LIMIT is appended when none is supplied; the cap is CRDB_MCP_MAX_ROWS_COUNT.",
+	}, h.selectQuery)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "explain_query",
+		Description: "Return the EXPLAIN plan for a SELECT statement without executing it. Same DML/DDL rejection rules as select_query.",
+	}, h.explainQuery)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "show_statement",
+		Description: "Execute a single SHOW statement. Any SHOW the connected SQL role is privileged to run is permitted; CRDB rejects statements the role lacks privileges for.",
+	}, h.showStatement)
 }
