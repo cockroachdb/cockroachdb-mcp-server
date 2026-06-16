@@ -1,8 +1,9 @@
 package db
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestSafeFormat(t *testing.T) {
@@ -51,12 +52,8 @@ func TestSafeFormat(t *testing.T) {
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
 				got, err := SafeFormat(tc.format, tc.args...)
-				if err != nil {
-					t.Fatalf("SafeFormat: %v", err)
-				}
-				if got != tc.want {
-					t.Fatalf("got %q, want %q", got, tc.want)
-				}
+				require.NoError(t, err)
+				require.Equal(t, tc.want, got)
 			})
 		}
 	})
@@ -83,12 +80,8 @@ func TestSafeFormat(t *testing.T) {
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
 				_, err := SafeFormat(tc.format, tc.args...)
-				if err == nil {
-					t.Fatalf("expected error containing %q", tc.contains)
-				}
-				if !strings.Contains(err.Error(), tc.contains) {
-					t.Fatalf("error %q should contain %q", err, tc.contains)
-				}
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.contains)
 			})
 		}
 	})
@@ -107,9 +100,7 @@ func TestIdentifierEscaping(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.got != tc.want {
-				t.Fatalf("got %q, want %q", tc.got, tc.want)
-			}
+			require.Equal(t, tc.want, tc.got)
 		})
 	}
 }

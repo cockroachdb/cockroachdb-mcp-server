@@ -7,6 +7,7 @@ import (
 
 	"github.com/cockroachdb/cockroachdb-mcp-server/db"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestListTables(t *testing.T) {
@@ -23,16 +24,11 @@ func TestListTables(t *testing.T) {
 		h := newHandlers(fq)
 
 		_, _, err := h.listTables(context.Background(), &mcp.CallToolRequest{}, ListTablesParams{Database: "appdb"})
-		if err != nil {
-			t.Fatalf("listTables: %v", err)
-		}
+		require.NoError(t, err)
 		got := fq.queries[0]
-		if !strings.Contains(got, `[SHOW TABLES FROM "appdb"]`) {
-			t.Fatalf("query should quote the database identifier: %q", got)
-		}
-		if !strings.HasSuffix(got, "LIMIT 100") {
-			t.Fatalf("query should append default LIMIT 100: %q", got)
-		}
+		require.Contains(t, got, `[SHOW TABLES FROM "appdb"]`)
+		require.Truef(t, strings.HasSuffix(got, "LIMIT 100"),
+			"query should append default LIMIT 100: %q", got)
 	})
 
 	t.Run("missing database is rejected before any query", func(t *testing.T) {
@@ -40,12 +36,8 @@ func TestListTables(t *testing.T) {
 		h := newHandlers(fq)
 
 		_, _, err := h.listTables(context.Background(), &mcp.CallToolRequest{}, ListTablesParams{})
-		if err == nil {
-			t.Fatal("expected error for empty database")
-		}
-		if len(fq.queries) != 0 {
-			t.Fatalf("no query should have been issued, got %d", len(fq.queries))
-		}
+		require.Error(t, err, "expected error for empty database")
+		require.Empty(t, fq.queries, "no query should have been issued")
 	})
 
 	t.Run("database identifier with embedded quote is escaped", func(t *testing.T) {
@@ -53,13 +45,7 @@ func TestListTables(t *testing.T) {
 		h := newHandlers(fq)
 
 		_, _, err := h.listTables(context.Background(), &mcp.CallToolRequest{}, ListTablesParams{Database: `na"me`})
-		if err != nil {
-			t.Fatalf("listTables: %v", err)
-		}
-		got := fq.queries[0]
-		if !strings.Contains(got, `[SHOW TABLES FROM "na""me"]`) {
-			t.Fatalf("embedded quote should be escaped: %q", got)
-		}
+		require.NoError(t, err)
+		require.Contains(t, fq.queries[0], `[SHOW TABLES FROM "na""me"]`)
 	})
-
 }

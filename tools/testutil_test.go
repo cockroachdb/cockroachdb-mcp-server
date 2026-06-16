@@ -7,6 +7,7 @@ import (
 	"github.com/cockroachdb/cockroachdb-mcp-server/config"
 	"github.com/cockroachdb/cockroachdb-mcp-server/db"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/require"
 )
 
 // newHandlers builds a ToolHandlers with a minimal cfg populated.
@@ -16,17 +17,10 @@ func newHandlers(dm DBManager) *ToolHandlers {
 
 func textOf(t *testing.T, res *mcp.CallToolResult) string {
 	t.Helper()
-	if res == nil {
-		t.Fatal("nil call tool result")
-	}
-	if len(res.Content) == 0 {
-		t.Fatal("no content in result")
-	}
-	tc, ok := res.Content[0].(*mcp.TextContent)
-	if !ok {
-		t.Fatalf("expected TextContent, got %T", res.Content[0])
-	}
-	return tc.Text
+	require.NotNil(t, res, "nil call tool result")
+	require.NotEmpty(t, res.Content, "no content in result")
+	require.IsType(t, &mcp.TextContent{}, res.Content[0])
+	return res.Content[0].(*mcp.TextContent).Text
 }
 
 // fakeQuerier is a test double for the DBManager interface that records the

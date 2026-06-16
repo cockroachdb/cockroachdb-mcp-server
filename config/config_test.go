@@ -2,9 +2,10 @@ package config
 
 import (
 	"os"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoad(t *testing.T) {
@@ -21,24 +22,12 @@ func TestLoad(t *testing.T) {
 	t.Run("defaults are applied", func(t *testing.T) {
 		setEnv(t, baseEnv)
 		cfg, err := Load()
-		if err != nil {
-			t.Fatalf("Load: %v", err)
-		}
-		if cfg.Port != defaultPort {
-			t.Fatalf("port: got %d, want %d", cfg.Port, defaultPort)
-		}
-		if cfg.SSLMode != defaultSSLMode {
-			t.Fatalf("ssl mode: got %q, want %q", cfg.SSLMode, defaultSSLMode)
-		}
-		if cfg.QueryTimeout != defaultQueryTimeout {
-			t.Fatalf("query timeout: got %v, want %v", cfg.QueryTimeout, defaultQueryTimeout)
-		}
-		if cfg.EnableWriteQueries {
-			t.Fatal("enable-write-queries should default to false")
-		}
-		if cfg.MaxRowsCount != defaultMaxRowsCount {
-			t.Fatalf("max rows count: got %d, want %d", cfg.MaxRowsCount, defaultMaxRowsCount)
-		}
+		require.NoError(t, err)
+		require.Equal(t, defaultPort, cfg.Port)
+		require.Equal(t, defaultSSLMode, cfg.SSLMode)
+		require.Equal(t, defaultQueryTimeout, cfg.QueryTimeout)
+		require.False(t, cfg.EnableWriteQueries, "enable-write-queries should default to false")
+		require.Equal(t, defaultMaxRowsCount, cfg.MaxRowsCount)
 	})
 
 	t.Run("overrides are honored", func(t *testing.T) {
@@ -50,59 +39,42 @@ func TestLoad(t *testing.T) {
 		})
 		setEnv(t, env)
 		cfg, err := Load()
-		if err != nil {
-			t.Fatalf("Load: %v", err)
-		}
-		if cfg.Port != 5432 {
-			t.Fatalf("port: got %d, want 5432", cfg.Port)
-		}
-		if !cfg.EnableWriteQueries {
-			t.Fatal("enable-write-queries should be true")
-		}
-		if cfg.QueryTimeout != 10*time.Second {
-			t.Fatalf("query timeout: got %v", cfg.QueryTimeout)
-		}
-		if cfg.MaxRowsCount != 500 {
-			t.Fatalf("max rows count: got %d, want 500", cfg.MaxRowsCount)
-		}
+		require.NoError(t, err)
+		require.Equal(t, 5432, cfg.Port)
+		require.True(t, cfg.EnableWriteQueries, "enable-write-queries should be true")
+		require.Equal(t, 10*time.Second, cfg.QueryTimeout)
+		require.Equal(t, int64(500), cfg.MaxRowsCount)
 	})
 
 	t.Run("non-positive max rows count is rejected", func(t *testing.T) {
 		env := mergeEnv(baseEnv, map[string]string{envMaxRowsCount: "0"})
 		setEnv(t, env)
-		if _, err := Load(); err == nil {
-			t.Fatal("expected error for non-positive max rows count")
-		}
+		_, err := Load()
+		require.Error(t, err, "expected error for non-positive max rows count")
 	})
 
 	t.Run("disallowed ssl mode is rejected", func(t *testing.T) {
 		env := mergeEnv(baseEnv, map[string]string{envSSLMode: "disable"})
 		setEnv(t, env)
-		if _, err := Load(); err == nil {
-			t.Fatal("expected error for sslmode=disable")
-		}
+		_, err := Load()
+		require.Error(t, err, "expected error for sslmode=disable")
 	})
 
 	t.Run("missing required env vars produce a single error", func(t *testing.T) {
 		clearEnv(t)
 		_, err := Load()
-		if err == nil {
-			t.Fatal("expected error when required env vars are missing")
-		}
+		require.Error(t, err, "expected error when required env vars are missing")
 		msg := err.Error()
 		for _, want := range []string{envHost, envUser, envCertFile, envKeyFile, envCAPath} {
-			if !strings.Contains(msg, want) {
-				t.Fatalf("missing env list should mention %q: %v", want, err)
-			}
+			require.Containsf(t, msg, want, "missing env list should mention %q", want)
 		}
 	})
 
 	t.Run("missing cert file is reported", func(t *testing.T) {
 		env := mergeEnv(baseEnv, map[string]string{envCertFile: "/nonexistent/path"})
 		setEnv(t, env)
-		if _, err := Load(); err == nil {
-			t.Fatal("expected error for missing cert file")
-		}
+		_, err := Load()
+		require.Error(t, err, "expected error for missing cert file")
 	})
 }
 
@@ -127,27 +99,21 @@ func TestDSN(t *testing.T) {
 			"root@crdb.example.com:26257",
 			"/defaultdb",
 		} {
-			if !strings.Contains(dsn, want) {
-				t.Fatalf("DSN missing %q: %s", want, dsn)
-			}
+			require.Containsf(t, dsn, want, "DSN missing %q", want)
 		}
 	})
 
 	t.Run("includes password when set", func(t *testing.T) {
 		c := *cfg
 		c.Password = "s3cret"
-		if !strings.Contains(c.DSN(), "root:s3cret@") {
-			t.Fatalf("DSN should include user:password: %s", c.DSN())
-		}
+		require.Contains(t, c.DSN(), "root:s3cret@", "DSN should include user:password")
 	})
 
 	t.Run("omits sslrootcert when CA path empty", func(t *testing.T) {
 		c := *cfg
 		c.CAPath = ""
 		c.SSLMode = "require"
-		if strings.Contains(c.DSN(), "sslrootcert") {
-			t.Fatalf("DSN should omit sslrootcert when empty: %s", c.DSN())
-		}
+		require.NotContains(t, c.DSN(), "sslrootcert", "DSN should omit sslrootcert when empty")
 	})
 }
 
@@ -176,28 +142,22 @@ func TestLoadDatabaseURL(t *testing.T) {
 		const raw = "postgresql://root@host:26257/defaultdb?sslmode=require"
 		t.Setenv(envDatabaseURL, raw)
 		cfg, err := Load()
-		if err != nil {
-			t.Fatalf("Load: %v", err)
-		}
-		if cfg.DSN() != raw {
-			t.Fatalf("DSN: got %q, want %q", cfg.DSN(), raw)
-		}
+		require.NoError(t, err)
+		require.Equal(t, raw, cfg.DSN())
 	})
 
 	t.Run("rejects URL with disallowed sslmode", func(t *testing.T) {
 		clearEnv(t)
 		t.Setenv(envDatabaseURL, "postgresql://root@host:26257/defaultdb?sslmode=disable")
-		if _, err := Load(); err == nil {
-			t.Fatal("expected error for sslmode=disable")
-		}
+		_, err := Load()
+		require.Error(t, err, "expected error for sslmode=disable")
 	})
 
 	t.Run("rejects URL missing sslmode", func(t *testing.T) {
 		clearEnv(t)
 		t.Setenv(envDatabaseURL, "postgresql://root@host:26257/defaultdb")
-		if _, err := Load(); err == nil {
-			t.Fatal("expected error when sslmode missing")
-		}
+		_, err := Load()
+		require.Error(t, err, "expected error when sslmode missing")
 	})
 
 	t.Run("URL takes precedence over cert env vars", func(t *testing.T) {
@@ -206,12 +166,9 @@ func TestLoadDatabaseURL(t *testing.T) {
 		t.Setenv(envHost, "wrong")
 		t.Setenv(envCertFile, "/does/not/exist")
 		cfg, err := Load()
-		if err != nil {
-			t.Fatalf("Load: %v", err)
-		}
-		if cfg.Host != "" || cfg.CertFile != "" {
-			t.Fatalf("cert fields should remain empty when URL is set: %+v", cfg)
-		}
+		require.NoError(t, err)
+		require.Emptyf(t, cfg.Host, "cert fields should remain empty when URL is set: %+v", cfg)
+		require.Emptyf(t, cfg.CertFile, "cert fields should remain empty when URL is set: %+v", cfg)
 	})
 }
 
@@ -233,9 +190,7 @@ func writeTempCerts(t *testing.T) (cert, key, ca string) {
 	key = dir + "/client.key"
 	ca = dir + "/ca.crt"
 	for _, p := range []string{cert, key, ca} {
-		if err := writeFile(p, "test"); err != nil {
-			t.Fatalf("write %s: %v", p, err)
-		}
+		require.NoErrorf(t, writeFile(p, "test"), "write %s", p)
 	}
 	return
 }
