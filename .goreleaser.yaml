@@ -41,5 +41,28 @@ changelog:
       - "^ci:"
       - "Merge pull request"
 
+# Multi-arch Docker image published to Google Artifact Registry. WIF auth
+# and docker login happen in the release workflow before GoReleaser runs.
+dockers_v2:
+  - id: cockroachdb-mcp-server
+    images:
+      - us-docker.pkg.dev/releases-prod/cockroachdb-mcp-server/cockroachdb-mcp-server
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    dockerfile: Dockerfile
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}"
+    labels:
+      org.opencontainers.image.title: cockroachdb-mcp-server
+      org.opencontainers.image.description: Self-hosted MCP server for CockroachDB.
+      org.opencontainers.image.source: https://github.com/cockroachdb/cockroachdb-mcp-server
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.licenses: Apache-2.0
+
 release:
-  draft: false
+  # TODO(rahulcrl): remove when the repo goes public.
+  disable: true

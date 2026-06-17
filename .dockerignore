@@ -1,0 +1,27 @@
+# Secrets and local credentials
+.env
+.env.*
+*.key
+*.pem
+*.crt
+*.p12
+
+# Local CockroachDB cluster state
+cockroach-data*/
+
+# Build outputs
+bin/
+dist/
+
+# Git, CI, and editor metadata
+.git/
+.github/
+.idea/
+.vscode/
+.claude/
+.DS_Store
+Thumbs.db
+
+# Test and tooling files not needed at runtime
+*_test.go
+testdata/
