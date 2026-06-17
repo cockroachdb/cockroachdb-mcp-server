@@ -15,9 +15,10 @@ type Manager struct {
 // NewManager opens an adapter using the provided server config.
 func NewManager(ctx context.Context, cfg *config.Config) (*Manager, error) {
 	adapter, err := NewAdapter(ctx, Config{
-		DSN:          cfg.DSN(),
-		QueryTimeout: cfg.QueryTimeout,
-		ReadOnly:     !cfg.EnableWriteQueries,
+		DSN:               cfg.DSN(),
+		QueryTimeout:      cfg.QueryTimeout,
+		ReadOnly:          !cfg.EnableWriteQueries,
+		AllowPasswordAuth: cfg.AllowPasswordAuth,
 	})
 	if err != nil {
 		return nil, err

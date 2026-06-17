@@ -43,11 +43,17 @@ Or the cert-based vars:
 | `CRDB_HOST` | Hostname | required |
 | `CRDB_PORT` | Port | `26257` |
 | `CRDB_USERNAME` | SQL user | required |
-| `CRDB_PWD` | Password (optional) | - |
+| `CRDB_PWD` | Password (discouraged, see note below) | - |
 | `CRDB_SSL_MODE` | `require`, `verify-ca`, or `verify-full` | `verify-full` |
 | `CRDB_SSL_CA_PATH` | CA cert path (required for `verify-ca` / `verify-full`) | - |
 | `CRDB_SSL_CERTFILE` | Client cert path | required |
 | `CRDB_SSL_KEYFILE` | Client key path | required |
+
+> **Cert-based auth is recommended in stdio mode.** The server runs as a
+> subprocess of the AI agent host, which can read `CRDB_PWD`, a password
+> embedded in `CRDB_DATABASE_URL`, `PGPASSWORD`, or `~/.pgpass` from this
+> process's environment. To protect those credentials, password-based auth is
+> rejected by default. Set `CRDB_MCP_ALLOW_PASSWORD_AUTH=true` to opt in.
 
 **Behaviour:**
 
@@ -56,11 +62,12 @@ Or the cert-based vars:
 | `CRDB_MCP_QUERY_TIMEOUT` | Per-query timeout (Go duration, e.g. `30s`) | `30s` |
 | `CRDB_MCP_MAX_ROWS_COUNT` | Caps the max LIMIT a list-style tool will issue to CRDB. Must be a positive integer. | `10000` |
 | `CRDB_MCP_ENABLE_WRITE_QUERIES` | Gates the write tools (`create_database`, `create_table`, `insert_rows`) that land in a follow-up PR. `false` keeps the server read-only | `false` |
+| `CRDB_MCP_ALLOW_PASSWORD_AUTH` | Opt-in to password-based auth (rejected by default) | `false` |
 
 ## Run
 
 ```bash
-export CRDB_DATABASE_URL="postgresql://user:pass@host:26257/defaultdb?sslmode=verify-full"
+export CRDB_DATABASE_URL="postgresql://user@host:26257/defaultdb?sslmode=verify-full&sslcert=/path/client.crt&sslkey=/path/client.key&sslrootcert=/path/ca.crt"
 ./bin/cockroachdb-mcp-server
 ```
 

@@ -23,6 +23,9 @@ type Config struct {
 	QueryTimeout time.Duration
 	// ReadOnly forces every pool session into read-only mode at SQL layer.
 	ReadOnly bool
+	// AllowPasswordAuth permits password-based connections when true; rejected
+	// by default to keep credentials out of the agent host environment.
+	AllowPasswordAuth bool
 }
 
 // NewAdapter creates a new pgxpool-backed adapter and verifies connectivity.
@@ -34,6 +37,11 @@ func NewAdapter(ctx context.Context, cfg Config) (*Adapter, error) {
 	poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
 	if err != nil {
 		return nil, errors.Wrap(err, "parse pool config")
+	}
+	if poolCfg.ConnConfig.Password != "" && !cfg.AllowPasswordAuth {
+		return nil, errors.New(
+			"password-based auth is disabled; set CRDB_MCP_ALLOW_PASSWORD_AUTH=true to enable, or use cert-based auth",
+		)
 	}
 	if _, ok := poolCfg.ConnConfig.RuntimeParams["application_name"]; !ok {
 		poolCfg.ConnConfig.RuntimeParams["application_name"] = defaultApplicationName

@@ -23,6 +23,7 @@ const (
 	envEnableWriteQueries = "CRDB_MCP_ENABLE_WRITE_QUERIES"
 	envQueryTimeout       = "CRDB_MCP_QUERY_TIMEOUT"
 	envMaxRowsCount       = "CRDB_MCP_MAX_ROWS_COUNT"
+	envAllowPasswordAuth  = "CRDB_MCP_ALLOW_PASSWORD_AUTH"
 
 	defaultPort               = 26257
 	defaultSSLMode            = "verify-full"
@@ -45,6 +46,7 @@ type Config struct {
 	EnableWriteQueries bool
 	QueryTimeout       time.Duration
 	MaxRowsCount       int64
+	AllowPasswordAuth  bool
 }
 
 // Load reads configuration from environment variables.
@@ -89,6 +91,13 @@ func Load() (*Config, error) {
 			return nil, errors.Wrapf(err, "%s must be a boolean", envEnableWriteQueries)
 		}
 		cfg.EnableWriteQueries = v
+	}
+	if raw := os.Getenv(envAllowPasswordAuth); raw != "" {
+		v, err := strconv.ParseBool(raw)
+		if err != nil {
+			return nil, errors.Wrapf(err, "%s must be a boolean", envAllowPasswordAuth)
+		}
+		cfg.AllowPasswordAuth = v
 	}
 
 	if cfg.DatabaseURL != "" {
