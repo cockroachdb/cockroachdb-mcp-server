@@ -31,6 +31,8 @@ func TestLoad(t *testing.T) {
 		require.False(t, cfg.EnableWriteQueries, "enable-write-queries should default to false")
 		require.False(t, cfg.AllowPasswordAuth, "allow-password-auth should default to false")
 		require.Equal(t, defaultMaxRowsCount, cfg.MaxRowsCount)
+		require.Equal(t, defaultMaxConns, cfg.MaxConns)
+		require.Empty(t, cfg.TxnQoS, "txn qos is empty unless env var is explicit; adapter applies the fallback")
 	})
 
 	t.Run("overrides are honored", func(t *testing.T) {
@@ -213,6 +215,53 @@ func TestLoad(t *testing.T) {
 		_, err := Load()
 		require.Error(t, err, "expected error for unknown transport")
 		require.Containsf(t, err.Error(), "websocket", "error should name the offending value: %v", err)
+	})
+
+	t.Run("max conns override is honored", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envMaxConns: "25"})
+		setEnv(t, env)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, int32(25), cfg.MaxConns)
+	})
+
+	t.Run("non-positive max conns is rejected", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envMaxConns: "0"})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "expected error for non-positive max conns")
+	})
+
+	t.Run("max conns above the upper bound is rejected", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envMaxConns: "1000"})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "expected error for max conns > ceiling")
+		require.Contains(t, err.Error(), "<= 100")
+	})
+
+	t.Run("txn qos override is honored", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envTxnQoS: "regular"})
+		setEnv(t, env)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, "regular", cfg.TxnQoS)
+	})
+
+	t.Run("txn qos is normalized to lowercase", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envTxnQoS: "BACKGROUND"})
+		setEnv(t, env)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, "background", cfg.TxnQoS,
+			"CRDB accepts QoS values case-insensitively; config should too")
+	})
+
+	t.Run("invalid txn qos is rejected", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envTxnQoS: "turbo"})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "expected error for invalid txn qos")
 	})
 }
 

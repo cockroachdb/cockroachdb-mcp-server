@@ -64,12 +64,23 @@ Or the cert-based vars:
 | `CRDB_MCP_MAX_ROWS_COUNT` | Caps the max LIMIT a list-style tool will issue to CRDB. Must be a positive integer. | `10000` |
 | `CRDB_MCP_ENABLE_WRITE_QUERIES` | Gates the write tools (`create_database`, `create_table`, `insert_rows`) that land in a follow-up PR. `false` keeps the server read-only | `false` |
 | `CRDB_MCP_ALLOW_PASSWORD_AUTH` | Opt-in to password-based auth (rejected by default) | `false` |
+| `CRDB_MCP_MAX_CONNS` | Upper bound on the pgxpool connection count. Must be a positive integer ≤ 100. | `10` |
+| `CRDB_MCP_TXN_QOS` | Default transaction QoS for MCP sessions. One of `background`, `regular`, `critical`. | `background` |
 | `CRDB_MCP_TRANSPORT` | Transport to serve MCP on. `stdio` or `http` | `stdio` |
 | `CRDB_MCP_HTTP_LISTEN_ADDR` | Listen address when `CRDB_MCP_TRANSPORT=http` | `:8080` |
 | `CRDB_MCP_BEARER_TOKEN` | Bearer token clients must present in `Authorization: Bearer <token>`. Required when `CRDB_MCP_TRANSPORT=http`; must be at least 16 characters | - |
 | `CRDB_MCP_TLS_CERT` | PEM-encoded server certificate path. Required for HTTPS unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` | - |
 | `CRDB_MCP_TLS_KEY` | PEM-encoded private key path. Required for HTTPS unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` | - |
 | `CRDB_MCP_ALLOW_INSECURE_HTTP` | Explicit opt-in to run HTTP mode without TLS (cleartext). Intended for deployments behind a TLS-terminating reverse proxy | `false` |
+
+The server sets `default_transaction_quality_of_service=background` on every
+session so MCP traffic does not contend with latency-sensitive foreground
+workloads. Precedence for picking the value:
+
+1. `CRDB_MCP_TXN_QOS` if set (`background`, `regular`, or `critical`).
+2. Otherwise, a `default_transaction_quality_of_service=...` query param in
+   `CRDB_DATABASE_URL`, if present.
+3. Otherwise, `background`.
 
 ## Run
 

@@ -4,7 +4,9 @@ package config
 import (
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -30,21 +32,28 @@ const (
 	envTLSCert            = "CRDB_MCP_TLS_CERT"
 	envTLSKey             = "CRDB_MCP_TLS_KEY"
 	envAllowInsecureHTTP  = "CRDB_MCP_ALLOW_INSECURE_HTTP"
+	envMaxConns           = "CRDB_MCP_MAX_CONNS"
+	envTxnQoS             = "CRDB_MCP_TXN_QOS"
 
 	defaultPort               = 26257
 	defaultSSLMode            = "verify-full"
 	defaultQueryTimeout       = 30 * time.Second
 	defaultMaxRowsCount int64 = 10000
-	defaultTransport          = "stdio"
-	defaultHTTPListenAddr     = ":8080"
-	minBearerTokenLength      = 16
-	bootstrapDB               = "defaultdb"
+	defaultMaxConns     int32 = 10
+	// maxAllowedConns caps user-supplied CRDB_MCP_MAX_CONNS.
+	maxAllowedConns       int32 = 100
+	defaultTransport            = "stdio"
+	defaultHTTPListenAddr       = ":8080"
+	minBearerTokenLength        = 16
+	bootstrapDB                 = "defaultdb"
 
 	// TransportStdio runs the server over stdin/stdout (default).
 	TransportStdio = "stdio"
 	// TransportHTTP runs the server as an HTTP service with bearer-token auth.
 	TransportHTTP = "http"
 )
+
+var allowedQoSValues = []string{"background", "regular", "critical"}
 
 // Config holds the server configuration.
 type Config struct {
@@ -60,13 +69,18 @@ type Config struct {
 	EnableWriteQueries bool
 	QueryTimeout       time.Duration
 	MaxRowsCount       int64
-	AllowPasswordAuth  bool
-	Transport          string
-	HTTPListenAddr     string
-	BearerToken        string
-	TLSCert            string
-	TLSKey             string
-	AllowInsecureHTTP  bool
+	MaxConns           int32
+	// TxnQoS is set only when CRDB_MCP_TXN_QOS is explicit. Empty means
+	// "let the adapter decide" - the adapter respects a DSN-supplied value
+	// if present, otherwise falls back to its background default.
+	TxnQoS            string
+	AllowPasswordAuth bool
+	Transport         string
+	HTTPListenAddr    string
+	BearerToken       string
+	TLSCert           string
+	TLSKey            string
+	AllowInsecureHTTP bool
 }
 
 // Load reads configuration from environment variables.
@@ -80,6 +94,7 @@ func Load() (*Config, error) {
 		Port:           defaultPort,
 		QueryTimeout:   defaultQueryTimeout,
 		MaxRowsCount:   defaultMaxRowsCount,
+		MaxConns:       defaultMaxConns,
 		Transport:      defaultTransport,
 		HTTPListenAddr: defaultHTTPListenAddr,
 		BearerToken:    os.Getenv(envBearerToken),
@@ -152,6 +167,24 @@ func Load() (*Config, error) {
 			return nil, errors.Wrapf(err, "%s must be a boolean", envAllowPasswordAuth)
 		}
 		cfg.AllowPasswordAuth = v
+	}
+	if raw := os.Getenv(envMaxConns); raw != "" {
+		n, err := strconv.ParseInt(raw, 10, 32)
+		if err != nil || n <= 0 {
+			return nil, errors.Newf("%s must be a positive integer, got %q", envMaxConns, raw)
+		}
+		if int32(n) > maxAllowedConns {
+			return nil, errors.Newf("%s must be <= %d, got %d", envMaxConns, maxAllowedConns, n)
+		}
+		cfg.MaxConns = int32(n)
+	}
+	if raw := os.Getenv(envTxnQoS); raw != "" {
+		v := strings.ToLower(raw)
+		if !slices.Contains(allowedQoSValues, v) {
+			return nil, errors.Newf("%s=%q is not allowed; use %s",
+				envTxnQoS, raw, strings.Join(allowedQoSValues, ", "))
+		}
+		cfg.TxnQoS = v
 	}
 
 	if cfg.DatabaseURL != "" {

@@ -18,6 +18,8 @@ func NewManager(ctx context.Context, cfg *config.Config) (*Manager, error) {
 		DSN:               cfg.DSN(),
 		QueryTimeout:      cfg.QueryTimeout,
 		ReadOnly:          !cfg.EnableWriteQueries,
+		MaxConns:          cfg.MaxConns,
+		TxnQoS:            cfg.TxnQoS,
 		AllowPasswordAuth: cfg.AllowPasswordAuth,
 	})
 	if err != nil {
