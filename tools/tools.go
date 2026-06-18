@@ -66,4 +66,9 @@ func (h *ToolHandlers) RegisterTools(server *mcp.Server) {
 		Name:        "list_cluster_nodes",
 		Description: "List CockroachDB cluster nodes with address, liveness, and locality. Requires admin or VIEWCLUSTERMETADATA.",
 	}, h.listClusterNodes)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "select_query",
+		Description: "Execute a single SELECT statement.",
+	}, h.selectQuery)
 }

@@ -34,3 +34,8 @@ type ShowRunningQueriesParams struct {
 type ListSQLUsersParams struct {
 	PaginationParams
 }
+
+// SelectQueryParams contains parameters for the select_query tool.
+type SelectQueryParams struct {
+	Query string `json:"query" jsonschema:"A single SELECT statement; non-SELECT statements are rejected. A default LIMIT is appended when none is supplied, capped at CRDB_MCP_MAX_ROWS_COUNT."`
+}
