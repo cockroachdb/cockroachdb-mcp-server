@@ -12,7 +12,7 @@ func (h *ToolHandlers) listDatabases(
 	ctx context.Context, _ *mcp.CallToolRequest, params ListDatabasesParams,
 ) (*mcp.CallToolResult, any, error) {
 	const query = `SELECT * FROM [SHOW DATABASES]`
-	sql, err := h.applyLimitOffset(query, params.Limit, params.Offset, defaultListDatabasesLimit)
+	sql, err := h.applyLimitOffset(query, params.Limit, params.Offset)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -21,7 +21,7 @@ func (h *ToolHandlers) listTables(
 	if err != nil {
 		return nil, nil, err
 	}
-	sql, err := h.applyLimitOffset(query, params.Limit, params.Offset, defaultListTablesLimit)
+	sql, err := h.applyLimitOffset(query, params.Limit, params.Offset)
 	if err != nil {
 		return nil, nil, err
 	}

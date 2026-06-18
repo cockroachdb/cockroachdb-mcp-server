@@ -46,4 +46,24 @@ func (h *ToolHandlers) RegisterTools(server *mcp.Server) {
 		Name:        "get_table_schema",
 		Description: "Get detailed schema information for a table including columns and indexes.",
 	}, h.getTableSchema)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "show_running_queries",
+		Description: "List in-flight SQL statements on the CockroachDB cluster.",
+	}, h.showRunningQueries)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_cluster",
+		Description: "Return CockroachDB cluster identity and version metadata.",
+	}, h.getCluster)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_sql_users",
+		Description: "List SQL users defined in the CockroachDB cluster.",
+	}, h.listSQLUsers)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_cluster_nodes",
+		Description: "List CockroachDB cluster nodes with address, liveness, and locality. Requires admin or VIEWCLUSTERMETADATA.",
+	}, h.listClusterNodes)
 }
