@@ -6,6 +6,7 @@ import (
 
 	"github.com/cockroachdb/cockroachdb-mcp-server/db"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetTableSchema(t *testing.T) {
@@ -22,13 +23,8 @@ func TestGetTableSchema(t *testing.T) {
 
 		_, _, err := h.getTableSchema(context.Background(), &mcp.CallToolRequest{},
 			TableSchemaParams{Database: "appdb", Table: "users"})
-		if err != nil {
-			t.Fatalf("getTableSchema: %v", err)
-		}
-		got := fq.queries[0]
-		if got != `SHOW CREATE TABLE "appdb"."public"."users"` {
-			t.Fatalf("unexpected query: %q", got)
-		}
+		require.NoError(t, err)
+		require.Equal(t, `SHOW CREATE TABLE "appdb"."public"."users"`, fq.queries[0])
 	})
 
 	t.Run("custom schema is honored", func(t *testing.T) {
@@ -37,13 +33,8 @@ func TestGetTableSchema(t *testing.T) {
 
 		_, _, err := h.getTableSchema(context.Background(), &mcp.CallToolRequest{},
 			TableSchemaParams{Database: "appdb", Schema: "billing", Table: "invoices"})
-		if err != nil {
-			t.Fatalf("getTableSchema: %v", err)
-		}
-		got := fq.queries[0]
-		if got != `SHOW CREATE TABLE "appdb"."billing"."invoices"` {
-			t.Fatalf("unexpected query: %q", got)
-		}
+		require.NoError(t, err)
+		require.Equal(t, `SHOW CREATE TABLE "appdb"."billing"."invoices"`, fq.queries[0])
 	})
 
 	t.Run("missing database is rejected", func(t *testing.T) {
@@ -52,12 +43,8 @@ func TestGetTableSchema(t *testing.T) {
 
 		_, _, err := h.getTableSchema(context.Background(), &mcp.CallToolRequest{},
 			TableSchemaParams{Table: "users"})
-		if err == nil {
-			t.Fatal("expected error for missing database")
-		}
-		if len(fq.queries) != 0 {
-			t.Fatalf("no query should have been issued, got %d", len(fq.queries))
-		}
+		require.Error(t, err, "expected error for missing database")
+		require.Empty(t, fq.queries, "no query should have been issued")
 	})
 
 	t.Run("missing table is rejected", func(t *testing.T) {
@@ -66,12 +53,8 @@ func TestGetTableSchema(t *testing.T) {
 
 		_, _, err := h.getTableSchema(context.Background(), &mcp.CallToolRequest{},
 			TableSchemaParams{Database: "appdb"})
-		if err == nil {
-			t.Fatal("expected error for missing table")
-		}
-		if len(fq.queries) != 0 {
-			t.Fatalf("no query should have been issued, got %d", len(fq.queries))
-		}
+		require.Error(t, err, "expected error for missing table")
+		require.Empty(t, fq.queries, "no query should have been issued")
 	})
 
 	t.Run("identifiers with embedded quotes are escaped", func(t *testing.T) {
@@ -80,14 +63,7 @@ func TestGetTableSchema(t *testing.T) {
 
 		_, _, err := h.getTableSchema(context.Background(), &mcp.CallToolRequest{},
 			TableSchemaParams{Database: `db"ev`, Schema: `sch"ma`, Table: `tb"l`})
-		if err != nil {
-			t.Fatalf("getTableSchema: %v", err)
-		}
-		got := fq.queries[0]
-		want := `SHOW CREATE TABLE "db""ev"."sch""ma"."tb""l"`
-		if got != want {
-			t.Fatalf("got %q\nwant %q", got, want)
-		}
+		require.NoError(t, err)
+		require.Equal(t, `SHOW CREATE TABLE "db""ev"."sch""ma"."tb""l"`, fq.queries[0])
 	})
-
 }
