@@ -2,9 +2,11 @@ package tools
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/cockroachdb/cockroachdb-mcp-server/db"
+	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,4 +72,123 @@ func TestQueryResultToMCP(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, textOf(t, res), `"rows":[]`)
 	})
+}
+
+func TestEnsureSelectOnly(t *testing.T) {
+	cases := []struct {
+		name    string
+		sql     string
+		wantErr bool
+	}{
+		// Happy paths.
+		{"plain SELECT", "SELECT 1", false},
+		{"CTE with SELECT", "WITH x AS (SELECT 1) SELECT * FROM x", false},
+		{"UNION of SELECTs", "SELECT 1 UNION SELECT 2", false},
+		{"bracket subquery with SELECT", "SELECT * FROM [SELECT 1]", false},
+		{"expression subquery with SELECT", "SELECT (SELECT 1)", false},
+		{"nested CTE all SELECTs", "WITH a AS (WITH b AS (SELECT 1) SELECT * FROM b) SELECT * FROM a", false},
+
+		// Top-level DML / DDL.
+		{"top-level DELETE", "DELETE FROM t", true},
+		{"top-level INSERT", "INSERT INTO t VALUES (1)", true},
+		{"top-level UPDATE", "UPDATE t SET a = 1", true},
+		{"top-level UPSERT", "UPSERT INTO t VALUES (1)", true},
+		{"top-level CREATE TABLE", "CREATE TABLE t (a INT)", true},
+		{"top-level DROP TABLE", "DROP TABLE t", true},
+
+		// DML hidden inside CTE.
+		{"CTE with DELETE", "WITH x AS (DELETE FROM t RETURNING *) SELECT * FROM x", true},
+		{"CTE with INSERT", "WITH x AS (INSERT INTO t VALUES (1) RETURNING *) SELECT * FROM x", true},
+		{"CTE with UPDATE", "WITH x AS (UPDATE t SET a = 1 RETURNING *) SELECT * FROM x", true},
+
+		// DML hidden inside bracket subquery (StatementSource).
+		{"bracket subquery with DELETE", "SELECT * FROM [DELETE FROM t RETURNING *]", true},
+		{"bracket subquery with INSERT", "SELECT * FROM [INSERT INTO t VALUES (1) RETURNING *]", true},
+		{"bracket subquery with UPDATE", "SELECT * FROM [UPDATE t SET a = 1 RETURNING *]", true},
+
+		// Nested DML hiding.
+		{"nested CTE with DML inside",
+			"WITH a AS (WITH b AS (DELETE FROM t RETURNING *) SELECT * FROM b) SELECT * FROM a", true},
+		{"UNION with bracket-subquery DML",
+			"SELECT 1 UNION SELECT id FROM [DELETE FROM t RETURNING id]", true},
+		{"bracket subquery with CTE DML",
+			"SELECT * FROM [WITH x AS (DELETE FROM t RETURNING *) SELECT * FROM x]", true},
+		{"expression subquery with CTE DML",
+			"SELECT (WITH x AS (DELETE FROM t RETURNING id) SELECT id FROM x LIMIT 1)", true},
+		{"FROM-clause parenthesised SELECT with CTE DML",
+			"SELECT * FROM (WITH x AS (DELETE FROM t RETURNING *) SELECT * FROM x) AS s", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stmt, err := parseSingleStatement(tc.sql)
+			require.NoError(t, err, "parse")
+			_, err = ensureSelectOnly(stmt)
+			if tc.wantErr {
+				require.Errorf(t, err, "validator should reject %q", tc.sql)
+			} else {
+				require.NoErrorf(t, err, "validator should allow %q", tc.sql)
+			}
+		})
+	}
+}
+
+func TestParseSingleStatement(t *testing.T) {
+	rejections := []struct {
+		name, input, wantContains string
+	}{
+		{"empty input", "", "required"},
+		{"over maxQueryLength", "SELECT '" + strings.Repeat("x", maxQueryLength) + "'", "maximum length"},
+		{"invalid syntax", "SELECT FROM WHERE", "invalid SQL syntax"},
+		{"multi-statement", "SELECT 1; SELECT 2", "exactly one statement"},
+	}
+	for _, tc := range rejections {
+		t.Run("rejects "+tc.name, func(t *testing.T) {
+			_, err := parseSingleStatement(tc.input)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.wantContains)
+		})
+	}
+
+	t.Run("returns AST for a single SELECT", func(t *testing.T) {
+		stmt, err := parseSingleStatement("SELECT 1")
+		require.NoError(t, err)
+		require.IsType(t, &tree.Select{}, stmt)
+	})
+}
+
+func TestValidateLimitClause(t *testing.T) {
+	const maxLimit int64 = 1000
+
+	parseLimit := func(t *testing.T, sql string) *tree.Limit {
+		t.Helper()
+		if sql == "" {
+			return nil
+		}
+		stmt, err := parseSingleStatement(sql)
+		require.NoError(t, err)
+		return stmt.(*tree.Select).Limit
+	}
+
+	cases := []struct {
+		name, sql, wantContains string
+	}{
+		{"nil limit", "", ""},
+		{"within bound", "SELECT 1 LIMIT 50", ""},
+		{"equal to maximum", "SELECT 1 LIMIT 1000", ""},
+		{"LIMIT ALL", "SELECT 1 LIMIT ALL", "LIMIT ALL is not allowed"},
+		{"above maximum", "SELECT 1 LIMIT 1001", "exceeds maximum"},
+		{"non-numeric", "SELECT 1 LIMIT length('x')", "must be a numeric literal"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateLimitClause(parseLimit(t, tc.sql), maxLimit)
+			if tc.wantContains == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.wantContains)
+			}
+		})
+	}
 }

@@ -75,6 +75,9 @@ export CRDB_DATABASE_URL="postgresql://user:pass@host:26257/defaultdb?sslmode=ve
 | `get_cluster` | Return CockroachDB cluster identity and version metadata: cluster_id, cluster_name, binary_version, active_version. |
 | `list_sql_users` | List SQL users defined in the CockroachDB cluster. Optional `limit` (default 100, max 10000) and `offset`. |
 | `list_cluster_nodes` | List CockroachDB cluster nodes with address, liveness, and locality. Requires admin or VIEWCLUSTERMETADATA on the connecting role. |
+| `select_query` | Execute a single agent-supplied SELECT (parser-validated). A default LIMIT of 100 is appended when none is supplied; the cap is `CRDB_MCP_MAX_ROWS_COUNT`. |
+
+Grant the connecting SQL role only the privileges the registered tools need. Avoid admin and write privileges unless write tools are explicitly registered.
 
 Additional read and write tools land in follow-up PRs.
 

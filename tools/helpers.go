@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 
 	"github.com/cockroachdb/cockroachdb-mcp-server/db"
+	crdbparser "github.com/cockroachdb/cockroachdb-parser/pkg/sql/parser"
+	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
 	"github.com/cockroachdb/errors"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -11,6 +13,139 @@ import (
 // defaultRowLimit is the LIMIT applied to list-style tools when the caller
 // does not supply one. The hard ceiling is config.MaxRowsCount.
 const defaultRowLimit int64 = 100
+
+// maxQueryLength bounds the size of agent-supplied SQL accepted by the
+// query execution tools.
+const maxQueryLength int = 100000
+
+// parseSingleStatement parses sql via cockroachdb-parser and returns the AST.
+// Rejects empty input, payloads larger than maxQueryLength, syntactically
+// invalid SQL, and payloads that parse to more than one statement.
+func parseSingleStatement(sql string) (tree.Statement, error) {
+	if len(sql) == 0 {
+		return nil, errors.New("query is required")
+	}
+	if len(sql) > maxQueryLength {
+		return nil, errors.Newf("query exceeds maximum length of %d characters", maxQueryLength)
+	}
+	stmts, err := crdbparser.Parse(sql)
+	if err != nil {
+		return nil, errors.Wrap(err, "invalid SQL syntax")
+	}
+	if len(stmts) != 1 {
+		return nil, errors.Newf("query must contain exactly one statement, got %d", len(stmts))
+	}
+	return stmts[0].AST, nil
+}
+
+// ensureSelectOnly walks the AST and rejects DML hidden inside CTEs, bracket
+// subqueries, or expression subqueries (e.g. `WITH x AS (DELETE ... RETURNING
+// *) SELECT * FROM x`). AST-level only; side-effecting builtins inside a
+// SELECT are gated by the connecting role's privileges.
+func ensureSelectOnly(stmt tree.Statement) (*tree.Select, error) {
+	sel, ok := stmt.(*tree.Select)
+	if !ok {
+		return nil, errors.Newf("only SELECT statements are allowed, got %s", stmt.StatementTag())
+	}
+	if sel.With != nil {
+		for _, cte := range sel.With.CTEList {
+			if _, err := ensureSelectOnly(cte.Stmt); err != nil {
+				return nil, errors.Wrap(err, "CTE contains a non-SELECT statement")
+			}
+		}
+	}
+	switch sc := sel.Select.(type) {
+	case *tree.SelectClause:
+		for _, te := range sc.From.Tables {
+			if err := walkTableExprReadOnly(te); err != nil {
+				return nil, err
+			}
+		}
+	case *tree.UnionClause:
+		if _, err := ensureSelectOnly(sc.Left); err != nil {
+			return nil, err
+		}
+		if _, err := ensureSelectOnly(sc.Right); err != nil {
+			return nil, err
+		}
+	case *tree.ParenSelect:
+		if _, err := ensureSelectOnly(sc.Select); err != nil {
+			return nil, err
+		}
+	}
+	// Covers Subqueries in expression position (projection list, WHERE);
+	// walkTableExprReadOnly covers FROM-clause Subqueries.
+	_, err := tree.SimpleStmtVisit(sel, func(e tree.Expr) (bool, tree.Expr, error) {
+		sub, ok := e.(*tree.Subquery)
+		if !ok {
+			return true, e, nil
+		}
+		if ps, ok := sub.Select.(*tree.ParenSelect); ok {
+			if _, err := ensureSelectOnly(ps.Select); err != nil {
+				return false, e, err
+			}
+		}
+		return true, e, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return sel, nil
+}
+
+// walkTableExprReadOnly rejects non-SELECT statements hidden inside
+// FROM-clause bracket or parenthesised subqueries.
+func walkTableExprReadOnly(expr tree.TableExpr) error {
+	switch t := expr.(type) {
+	case *tree.AliasedTableExpr:
+		return walkTableExprReadOnly(t.Expr)
+	case *tree.JoinTableExpr:
+		if err := walkTableExprReadOnly(t.Left); err != nil {
+			return err
+		}
+		return walkTableExprReadOnly(t.Right)
+	case *tree.ParenTableExpr:
+		return walkTableExprReadOnly(t.Expr)
+	case *tree.StatementSource:
+		_, err := ensureSelectOnly(t.Statement)
+		return err
+	case *tree.Subquery:
+		if ps, ok := t.Select.(*tree.ParenSelect); ok {
+			_, err := ensureSelectOnly(ps.Select)
+			return err
+		}
+	}
+	return nil
+}
+
+// validateLimitClause rejects a SELECT LIMIT clause that is negative, uses
+// LIMIT ALL, is not a numeric literal, or exceeds maxLimit.
+func validateLimitClause(limit *tree.Limit, maxLimit int64) error {
+	if limit == nil {
+		return nil
+	}
+	if limit.LimitAll {
+		return errors.Newf("LIMIT ALL is not allowed; maximum LIMIT is %d", maxLimit)
+	}
+	if limit.Count == nil {
+		return nil
+	}
+	numVal, ok := limit.Count.(*tree.NumVal)
+	if !ok {
+		return errors.Newf("LIMIT must be a numeric literal; maximum LIMIT is %d", maxLimit)
+	}
+	n, err := numVal.AsInt64()
+	if err != nil {
+		return errors.Wrapf(err, "invalid LIMIT value; maximum LIMIT is %d", maxLimit)
+	}
+	if n < 0 {
+		return errors.New("LIMIT must be zero or positive")
+	}
+	if n > maxLimit {
+		return errors.Newf("LIMIT %d exceeds maximum of %d", n, maxLimit)
+	}
+	return nil
+}
 
 // MCPQueryResult is the response shape returned by read tools.
 type MCPQueryResult struct {
