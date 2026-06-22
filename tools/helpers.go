@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/cockroachdb/cockroachdb-mcp-server/db"
 	crdbparser "github.com/cockroachdb/cockroachdb-parser/pkg/sql/parser"
@@ -143,6 +144,15 @@ func validateLimitClause(limit *tree.Limit, maxLimit int64) error {
 	}
 	if n > maxLimit {
 		return errors.Newf("LIMIT %d exceeds maximum of %d", n, maxLimit)
+	}
+	return nil
+}
+
+// validateShowStatement enforces that stmt is a SHOW statement.
+func validateShowStatement(stmt tree.Statement) error {
+	tag := stmt.StatementTag()
+	if tag != "SHOW" && !strings.HasPrefix(tag, "SHOW ") {
+		return errors.Newf("only SHOW statements are allowed, got %s", tag)
 	}
 	return nil
 }

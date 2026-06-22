@@ -71,4 +71,14 @@ func (h *ToolHandlers) RegisterTools(server *mcp.Server) {
 		Name:        "select_query",
 		Description: "Execute a single SELECT statement.",
 	}, h.selectQuery)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "explain_query",
+		Description: "Return the EXPLAIN plan for a single SQL statement.",
+	}, h.explainQuery)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "show_statement",
+		Description: "Execute a single SHOW statement.",
+	}, h.showStatement)
 }
