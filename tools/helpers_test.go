@@ -141,6 +141,10 @@ func TestParseSingleStatement(t *testing.T) {
 		{"over maxQueryLength", "SELECT '" + strings.Repeat("x", maxQueryLength) + "'", "maximum length"},
 		{"invalid syntax", "SELECT FROM WHERE", "invalid SQL syntax"},
 		{"multi-statement", "SELECT 1; SELECT 2", "exactly one statement"},
+		// Real semicolons that follow lexer-recognised boundaries still split
+		// statements, even when comments or dollar-quoted strings sit between.
+		{"multi-statement past block comment", "SELECT /* x */ 1; DROP TABLE y", "exactly one statement"},
+		{"multi-statement past dollar-quoted string", "SELECT $$x$$ AS y; DROP TABLE z", "exactly one statement"},
 	}
 	for _, tc := range rejections {
 		t.Run("rejects "+tc.name, func(t *testing.T) {
@@ -150,11 +154,23 @@ func TestParseSingleStatement(t *testing.T) {
 		})
 	}
 
-	t.Run("returns AST for a single SELECT", func(t *testing.T) {
-		stmt, err := parseSingleStatement("SELECT 1")
-		require.NoError(t, err)
-		require.IsType(t, &tree.Select{}, stmt)
-	})
+	// Semicolons inside comments or dollar-quoted strings are not statement
+	// separators and must not be treated as smuggling attempts.
+	accepted := []struct {
+		name, input string
+	}{
+		{"single SELECT", "SELECT 1"},
+		{"semicolon inside line comment", "SELECT 1 -- ; DROP TABLE x"},
+		{"semicolon inside block comment", "SELECT /* ; SELECT 2 */ 1"},
+		{"semicolon inside dollar-quoted string", "SELECT $$;DROP TABLE x;$$"},
+	}
+	for _, tc := range accepted {
+		t.Run("accepts "+tc.name, func(t *testing.T) {
+			stmt, err := parseSingleStatement(tc.input)
+			require.NoError(t, err)
+			require.NotNil(t, stmt)
+		})
+	}
 }
 
 func TestValidateLimitClause(t *testing.T) {

@@ -17,12 +17,12 @@ type Adapter struct {
 	queryTimeout time.Duration
 }
 
-// Config is the subset of server configuration the adapter needs to open a
-// pool. It is intentionally narrow so the adapter does not depend on the
-// config package.
+// Config is the narrow subset of server config the adapter needs.
 type Config struct {
 	DSN          string
 	QueryTimeout time.Duration
+	// ReadOnly forces every pool session into read-only mode at SQL layer.
+	ReadOnly bool
 }
 
 // NewAdapter creates a new pgxpool-backed adapter and verifies connectivity.
@@ -40,9 +40,29 @@ func NewAdapter(ctx context.Context, cfg Config) (*Adapter, error) {
 	}
 	// Disable pgx statement caching; stale plans surface as SQLSTATE 26000.
 	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
+
+	// Default: DISCARD ALL after every release to keep sessions clean.
 	poolCfg.AfterRelease = func(c *pgx.Conn) bool {
-		_, err := c.Exec(context.Background(), "DISCARD ALL")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, err := c.Exec(ctx, "DISCARD ALL")
 		return err == nil
+	}
+
+	// Read-only: SET at first use (AfterConnect) and re-apply on every release
+	// because DISCARD ALL resets session GUCs.
+	if cfg.ReadOnly {
+		const setReadOnly = "SET default_transaction_read_only = true"
+		poolCfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, setReadOnly)
+			return err
+		}
+		poolCfg.AfterRelease = func(c *pgx.Conn) bool {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, err := c.Exec(ctx, "DISCARD ALL; "+setReadOnly)
+			return err == nil
+		}
 	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
@@ -86,6 +106,24 @@ func (a *Adapter) Query(ctx context.Context, sql string) (*QueryResult, error) {
 	}
 	defer rows.Close()
 	return scanRows(rows)
+}
+
+// Exec runs a non-result-returning statement (DDL/DML) and returns the
+// number of rows affected.
+func (a *Adapter) Exec(ctx context.Context, sql string) (int64, error) {
+	if sql == "" {
+		return 0, errors.New("SQL statement cannot be empty")
+	}
+	if a.queryTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, a.queryTimeout)
+		defer cancel()
+	}
+	tag, err := a.pool.Exec(ctx, sql)
+	if err != nil {
+		return 0, errors.Wrap(err, "exec statement")
+	}
+	return tag.RowsAffected(), nil
 }
 
 func scanRows(rows pgx.Rows) (*QueryResult, error) {

@@ -13,6 +13,7 @@ import (
 // real *db.Manager satisfies it; tests use a fake.
 type DBManager interface {
 	Query(ctx context.Context, sql string) (*db.QueryResult, error)
+	Exec(ctx context.Context, sql string) (int64, error)
 }
 
 // ToolHandlers wires MCP tool handlers to the underlying database querier and
@@ -81,4 +82,22 @@ func (h *ToolHandlers) RegisterTools(server *mcp.Server) {
 		Name:        "show_statement",
 		Description: "Execute a single SHOW statement.",
 	}, h.showStatement)
+
+	// Write tools are only enabled when CRDB_MCP_ENABLE_WRITE_QUERIES=true.
+	if h.cfg.EnableWriteQueries {
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "create_database",
+			Description: "Create a database.",
+		}, h.createDatabase)
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "create_table",
+			Description: "Execute a single CREATE TABLE statement.",
+		}, h.createTable)
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "insert_rows",
+			Description: "Execute a single INSERT statement. Returns the number of rows affected.",
+		}, h.insertRows)
+	}
 }
