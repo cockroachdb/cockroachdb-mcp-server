@@ -192,3 +192,46 @@ func TestValidateLimitClause(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateShowStatement(t *testing.T) {
+	cases := []struct {
+		name    string
+		sql     string
+		wantErr bool
+	}{
+		// Schema / topology SHOWs.
+		{"SHOW DATABASES", "SHOW DATABASES", false},
+		{"SHOW SCHEMAS", "SHOW SCHEMAS", false},
+		{"SHOW TABLES", "SHOW TABLES", false},
+		{"SHOW COLUMNS", "SHOW COLUMNS FROM t", false},
+		{"SHOW INDEXES", "SHOW INDEXES FROM t", false},
+		{"SHOW CREATE", "SHOW CREATE TABLE t", false},
+		{"SHOW REGIONS", "SHOW REGIONS", false},
+		{"SHOW ZONE CONFIG", "SHOW ZONE CONFIGURATION FROM TABLE t", false},
+
+		// Operational SHOWs - allowed; CRDB enforces privileges at execution.
+		{"SHOW JOBS", "SHOW JOBS", false},
+		{"SHOW QUERIES", "SHOW QUERIES", false},
+		{"SHOW SESSIONS", "SHOW SESSIONS", false},
+		{"SHOW STATISTICS", "SHOW STATISTICS FOR TABLE t", false},
+
+		// Non-SHOW statements rejected.
+		{"SELECT rejected", "SELECT 1", true},
+		{"DELETE rejected", "DELETE FROM t", true},
+		{"CREATE TABLE rejected", "CREATE TABLE t (a INT)", true},
+		{"SET rejected", "SET application_name = 'x'", true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stmt, err := parseSingleStatement(tc.sql)
+			require.NoError(t, err, "parse")
+			err = validateShowStatement(stmt)
+			if tc.wantErr {
+				require.Errorf(t, err, "validator should reject %q", tc.sql)
+			} else {
+				require.NoErrorf(t, err, "validator should allow %q", tc.sql)
+			}
+		})
+	}
+}

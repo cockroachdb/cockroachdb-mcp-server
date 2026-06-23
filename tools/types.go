@@ -39,3 +39,14 @@ type ListSQLUsersParams struct {
 type SelectQueryParams struct {
 	Query string `json:"query" jsonschema:"A single SELECT statement; non-SELECT statements are rejected. A default LIMIT is appended when none is supplied, capped at CRDB_MCP_MAX_ROWS_COUNT."`
 }
+
+// ExplainQueryParams contains parameters for the explain_query tool.
+type ExplainQueryParams struct {
+	Query string `json:"query" jsonschema:"A single SQL statement. The server returns the EXPLAIN plan without executing the statement. EXPLAIN ANALYZE (and its DEBUG variant) is rejected because it executes the statement. EXPLAIN with display options (VERBOSE, DISTSQL, TYPES, OPT, etc.) is passed through as-is."`
+}
+
+// ShowStatementParams contains parameters for the show_statement tool.
+type ShowStatementParams struct {
+	Query string `json:"query" jsonschema:"A single SHOW statement (e.g. SHOW SCHEMAS, SHOW INDEXES, SHOW REGIONS). A default LIMIT is appended, capped at CRDB_MCP_MAX_ROWS_COUNT."`
+	PaginationParams
+}
