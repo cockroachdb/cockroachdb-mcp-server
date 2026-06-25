@@ -27,6 +27,7 @@ func TestLoad(t *testing.T) {
 		require.Equal(t, defaultSSLMode, cfg.SSLMode)
 		require.Equal(t, defaultQueryTimeout, cfg.QueryTimeout)
 		require.False(t, cfg.EnableWriteQueries, "enable-write-queries should default to false")
+		require.False(t, cfg.AllowPasswordAuth, "allow-password-auth should default to false")
 		require.Equal(t, defaultMaxRowsCount, cfg.MaxRowsCount)
 	})
 
@@ -75,6 +76,21 @@ func TestLoad(t *testing.T) {
 		setEnv(t, env)
 		_, err := Load()
 		require.Error(t, err, "expected error for missing cert file")
+	})
+
+	t.Run("allow-password-auth opt-in is parsed", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envAllowPasswordAuth: "true"})
+		setEnv(t, env)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.True(t, cfg.AllowPasswordAuth, "AllowPasswordAuth should be true")
+	})
+
+	t.Run("invalid opt-in bool is rejected", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envAllowPasswordAuth: "not-a-bool"})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "expected error for invalid bool")
 	})
 }
 
@@ -130,7 +146,7 @@ func clearEnv(t *testing.T) {
 	for _, k := range []string{
 		envDatabaseURL, envHost, envPort, envUser, envPassword, envSSLMode,
 		envCAPath, envCertFile, envKeyFile, envEnableWriteQueries, envQueryTimeout,
-		envMaxRowsCount,
+		envMaxRowsCount, envAllowPasswordAuth,
 	} {
 		t.Setenv(k, "")
 	}
