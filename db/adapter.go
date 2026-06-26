@@ -9,7 +9,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const defaultApplicationName = "cockroachdb-mcp-server"
+const (
+	defaultApplicationName = "cockroachdb-mcp-server"
+	// defaultTxnQoS is applied when neither cfg.TxnQoS nor the DSN specifies
+	// one. "background" tells CRDB's admission control to yield to
+	// latency-sensitive foreground SQL.
+	defaultTxnQoS = "background"
+)
 
 // Adapter centralizes connection pooling and SQL execution against CockroachDB.
 type Adapter struct {
@@ -17,7 +23,9 @@ type Adapter struct {
 	queryTimeout time.Duration
 }
 
-// Config is the narrow subset of server config the adapter needs.
+// Config is the subset of server configuration the adapter needs to open a
+// pool. It is intentionally narrow so the adapter does not depend on the
+// config package.
 type Config struct {
 	DSN          string
 	QueryTimeout time.Duration
@@ -26,51 +34,15 @@ type Config struct {
 	// AllowPasswordAuth permits password-based connections when true; rejected
 	// by default to keep credentials out of the agent host environment.
 	AllowPasswordAuth bool
+	MaxConns          int32
+	TxnQoS            string
 }
 
 // NewAdapter creates a new pgxpool-backed adapter and verifies connectivity.
 func NewAdapter(ctx context.Context, cfg Config) (*Adapter, error) {
-	if cfg.DSN == "" {
-		return nil, errors.New("DSN cannot be empty")
-	}
-
-	poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
+	poolCfg, err := buildPoolConfig(cfg)
 	if err != nil {
-		return nil, errors.Wrap(err, "parse pool config")
-	}
-	if poolCfg.ConnConfig.Password != "" && !cfg.AllowPasswordAuth {
-		return nil, errors.New(
-			"password-based auth is disabled; set CRDB_MCP_ALLOW_PASSWORD_AUTH=true to enable, or use cert-based auth",
-		)
-	}
-	if _, ok := poolCfg.ConnConfig.RuntimeParams["application_name"]; !ok {
-		poolCfg.ConnConfig.RuntimeParams["application_name"] = defaultApplicationName
-	}
-	// Disable pgx statement caching; stale plans surface as SQLSTATE 26000.
-	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
-
-	// Default: DISCARD ALL after every release to keep sessions clean.
-	poolCfg.AfterRelease = func(c *pgx.Conn) bool {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_, err := c.Exec(ctx, "DISCARD ALL")
-		return err == nil
-	}
-
-	// Read-only: SET at first use (AfterConnect) and re-apply on every release
-	// because DISCARD ALL resets session GUCs.
-	if cfg.ReadOnly {
-		const setReadOnly = "SET default_transaction_read_only = true"
-		poolCfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
-			_, err := conn.Exec(ctx, setReadOnly)
-			return err
-		}
-		poolCfg.AfterRelease = func(c *pgx.Conn) bool {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_, err := c.Exec(ctx, "DISCARD ALL; "+setReadOnly)
-			return err == nil
-		}
+		return nil, err
 	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
@@ -89,6 +61,69 @@ func NewAdapter(ctx context.Context, cfg Config) (*Adapter, error) {
 		pool:         pool,
 		queryTimeout: cfg.QueryTimeout,
 	}, nil
+}
+
+// buildPoolConfig is the pure half of NewAdapter: it does no I/O, so the
+// defaults applied here are unit-testable without a live database.
+func buildPoolConfig(cfg Config) (*pgxpool.Config, error) {
+	if cfg.DSN == "" {
+		return nil, errors.New("DSN cannot be empty")
+	}
+
+	poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
+	if err != nil {
+		return nil, errors.Wrap(err, "parse pool config")
+	}
+	if poolCfg.ConnConfig.Password != "" && !cfg.AllowPasswordAuth {
+		return nil, errors.New(
+			"password-based auth is disabled; set CRDB_MCP_ALLOW_PASSWORD_AUTH=true to enable, or use cert-based auth",
+		)
+	}
+	if _, ok := poolCfg.ConnConfig.RuntimeParams["application_name"]; !ok {
+		poolCfg.ConnConfig.RuntimeParams["application_name"] = defaultApplicationName
+	}
+	// QoS precedence: explicit cfg (env var) wins; otherwise honor a
+	// DSN-supplied value; otherwise apply background default. The value lands
+	// in startup params, so CRDB's RESET ALL / DISCARD ALL semantics restore
+	// it across pool reuse without an explicit re-apply.
+	const qosKey = "default_transaction_quality_of_service"
+	switch {
+	case cfg.TxnQoS != "":
+		poolCfg.ConnConfig.RuntimeParams[qosKey] = cfg.TxnQoS
+	case poolCfg.ConnConfig.RuntimeParams[qosKey] == "":
+		poolCfg.ConnConfig.RuntimeParams[qosKey] = defaultTxnQoS
+	}
+	if cfg.MaxConns > 0 {
+		poolCfg.MaxConns = cfg.MaxConns
+	}
+	// Disable pgx statement caching; stale plans surface as SQLSTATE 26000.
+	poolCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
+
+	// Default: DISCARD ALL after every release to keep sessions clean.
+	poolCfg.AfterRelease = func(c *pgx.Conn) bool {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, err := c.Exec(ctx, "DISCARD ALL")
+		return err == nil
+	}
+
+	// Read-only is applied via SET (not a startup param), so DISCARD ALL
+	// resets it; re-apply on every release.
+	if cfg.ReadOnly {
+		const setReadOnly = "SET default_transaction_read_only = true"
+		poolCfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+			_, err := conn.Exec(ctx, setReadOnly)
+			return err
+		}
+		poolCfg.AfterRelease = func(c *pgx.Conn) bool {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_, err := c.Exec(ctx, "DISCARD ALL; "+setReadOnly)
+			return err == nil
+		}
+	}
+
+	return poolCfg, nil
 }
 
 // Close releases the underlying connection pool.
