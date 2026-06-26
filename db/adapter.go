@@ -2,12 +2,27 @@ package db
 
 import (
 	"context"
+	"strings"
 	"time"
 
+	mcpotel "github.com/cockroachdb/cockroachdb-mcp-server/otel"
+	crdbparser "github.com/cockroachdb/cockroachdb-parser/pkg/sql/parser"
+	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
 	"github.com/cockroachdb/errors"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	semconv "go.opentelemetry.io/otel/semconv/v1.30.0"
+	"go.opentelemetry.io/otel/trace"
 )
+
+const redactedSQLFallback = "<redacted: unparseable SQL>"
+
+// tracerScope names the instrumentation scope for spans created by this
+// package.
+const tracerScope = "github.com/cockroachdb/cockroachdb-mcp-server/db"
 
 const (
 	defaultApplicationName = "cockroachdb-mcp-server"
@@ -134,10 +149,12 @@ func (a *Adapter) Close() {
 }
 
 // Query executes a query and returns columns and rows.
-func (a *Adapter) Query(ctx context.Context, sql string) (*QueryResult, error) {
+func (a *Adapter) Query(ctx context.Context, sql string) (_ *QueryResult, err error) {
 	if sql == "" {
 		return nil, errors.New("SQL statement cannot be empty")
 	}
+	ctx, span := startSQLSpan(ctx, sql)
+	defer func() { endSpan(span, err) }()
 	if a.queryTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, a.queryTimeout)
@@ -148,15 +165,22 @@ func (a *Adapter) Query(ctx context.Context, sql string) (*QueryResult, error) {
 		return nil, errors.Wrap(err, "exec query")
 	}
 	defer rows.Close()
-	return scanRows(rows)
+	result, err := scanRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	span.SetAttributes(semconv.DBResponseReturnedRows(len(result.Rows)))
+	return result, nil
 }
 
 // Exec runs a non-result-returning statement (DDL/DML) and returns the
 // number of rows affected.
-func (a *Adapter) Exec(ctx context.Context, sql string) (int64, error) {
+func (a *Adapter) Exec(ctx context.Context, sql string) (_ int64, err error) {
 	if sql == "" {
 		return 0, errors.New("SQL statement cannot be empty")
 	}
+	ctx, span := startSQLSpan(ctx, sql)
+	defer func() { endSpan(span, err) }()
 	if a.queryTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, a.queryTimeout)
@@ -166,7 +190,69 @@ func (a *Adapter) Exec(ctx context.Context, sql string) (int64, error) {
 	if err != nil {
 		return 0, errors.Wrap(err, "exec statement")
 	}
+	span.SetAttributes(attribute.Int64("db.response.affected_rows", tag.RowsAffected()))
 	return tag.RowsAffected(), nil
+}
+
+// startSQLSpan is a no-op until otel.Setup installs an exporter. When no
+// exporter is configured, redactSQL is not called so the parser does not run
+// on the hot path.
+func startSQLSpan(ctx context.Context, sql string) (context.Context, trace.Span) {
+	op := sqlOperation(sql)
+	name := "sql.statement"
+	if op != "" {
+		name = "sql." + op
+	}
+	ctx, span := otel.Tracer(tracerScope).Start(ctx, name,
+		trace.WithSpanKind(trace.SpanKindClient))
+	if !span.IsRecording() {
+		return ctx, span
+	}
+	attrs := []attribute.KeyValue{
+		semconv.DBSystemNameCockroachdb,
+		semconv.DBQueryText(redactSQL(sql)),
+	}
+	if op != "" {
+		attrs = append(attrs, semconv.DBOperationName(op))
+	}
+	span.SetAttributes(attrs...)
+	return ctx, span
+}
+
+// redactSQL parses sql and re-formats it with table/column names anonymized
+// and constants hidden so no user data lands in span attributes.
+func redactSQL(sql string) string {
+	stmts, err := crdbparser.Parse(sql)
+	if err != nil {
+		return redactedSQLFallback
+	}
+	return stmts.StringWithFlags(tree.FmtAnonymize | tree.FmtHideConstants)
+}
+
+func sqlOperation(sql string) string {
+	fs := strings.Fields(sql)
+	if len(fs) == 0 {
+		return ""
+	}
+	op := strings.ToUpper(fs[0])
+	for _, r := range op {
+		if r < 'A' || r > 'Z' {
+			return ""
+		}
+	}
+	return op
+}
+
+// endSpan must run inside a closure so it captures err at defer-time:
+//
+//	defer func() { endSpan(span, retErr) }()
+func endSpan(span trace.Span, err error) {
+	if err != nil {
+		safe := mcpotel.SafeSpanError(err)
+		span.RecordError(safe)
+		span.SetStatus(codes.Error, safe.Error())
+	}
+	span.End()
 }
 
 func scanRows(rows pgx.Rows) (*QueryResult, error) {

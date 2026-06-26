@@ -18,6 +18,7 @@ import (
 	"github.com/cockroachdb/cockroachdb-mcp-server/db"
 	"github.com/cockroachdb/cockroachdb-mcp-server/logging"
 	"github.com/cockroachdb/cockroachdb-mcp-server/middleware"
+	mcpotel "github.com/cockroachdb/cockroachdb-mcp-server/otel"
 	"github.com/cockroachdb/cockroachdb-mcp-server/tools"
 	"github.com/cockroachdb/errors"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -77,6 +78,21 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	shutdownOTel, err := mcpotel.Setup(ctx, cfg, serverName, serverVersion)
+	if err != nil {
+		return errors.Wrap(err, "setup opentelemetry")
+	}
+	defer func() {
+		sctx, cancel := context.WithTimeout(context.Background(), shutdownPeriod)
+		defer cancel()
+		if err := shutdownOTel(sctx); err != nil {
+			zap.L().Warn("opentelemetry shutdown", zap.Error(err))
+		}
+	}()
+	if cfg.OTelEnabled() {
+		zap.ReplaceGlobals(mcpotel.AttachZapBridge(logger, serverName))
+	}
+
 	dm, err := db.NewManager(ctx, cfg)
 	if err != nil {
 		return errors.Wrap(err, "initialize database manager")
@@ -87,7 +103,7 @@ func run() error {
 		Name:    serverName,
 		Version: serverVersion,
 	}, nil)
-	server.AddReceivingMiddleware(middleware.ToolCallLogger)
+	server.AddReceivingMiddleware(middleware.ToolCallSpan, middleware.ToolCallLogger)
 	tools.NewToolHandlers(dm, cfg).RegisterTools(server)
 
 	zap.L().Info("starting server",

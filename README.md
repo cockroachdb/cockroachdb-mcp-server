@@ -21,8 +21,6 @@ tools by default; write and DDL tools opt in via env var.
 
 Requires Go 1.25+ and a reachable CockroachDB cluster.
 
-### `go install`
-
 ```bash
 go install github.com/cockroachdb/cockroachdb-mcp-server@latest
 ```
@@ -196,6 +194,31 @@ Precedence for picking the value:
 | --- | --- | --- |
 | `CRDB_MCP_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
 | `CRDB_MCP_LOG_PATH` | Log file path, or `-` for stderr. No rotation; use logrotate or your orchestrator | - |
+
+### Tracing (OpenTelemetry)
+
+Tracing is opt-in: with neither variable below set, no exporter is installed.
+When enabled, tool calls and their SQL statements are exported as spans, and
+server logs as OTel log records. Query text and errors are redacted before
+export so literals and user data never leave the server.
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP gRPC endpoint; the standard `OTEL_*` env vars are honored | - |
+| `CRDB_MCP_OTEL_FILE` | Write traces and logs as JSON lines to this file instead (takes precedence) | - |
+
+In stdio mode, add the variable to the `env` block of your
+[MCP client config](#setup---mcp-client-config); in HTTP mode, export it in
+the server's environment:
+
+```json
+{
+  "env": {
+    "CRDB_DATABASE_URL": "postgresql://...",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317"
+  }
+}
+```
 
 ## Tools
 
