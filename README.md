@@ -72,6 +72,8 @@ Or the cert-based vars:
 | `CRDB_MCP_TLS_CERT` | PEM-encoded server certificate path. Required for HTTPS unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` | - |
 | `CRDB_MCP_TLS_KEY` | PEM-encoded private key path. Required for HTTPS unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` | - |
 | `CRDB_MCP_ALLOW_INSECURE_HTTP` | Explicit opt-in to run HTTP mode without TLS (cleartext). Intended for deployments behind a TLS-terminating reverse proxy | `false` |
+| `CRDB_MCP_LOG_LEVEL` | Log level for the structured JSON logger (see `CRDB_MCP_LOG_PATH`). One of `debug`, `info`, `warn`, `error` | `info` |
+| `CRDB_MCP_LOG_PATH` | Append logs to this file path. Use `-` for stderr. No rotation; use logrotate or your orchestrator. | - |
 
 The server sets `default_transaction_quality_of_service=background` on every
 session so MCP traffic does not contend with latency-sensitive foreground
