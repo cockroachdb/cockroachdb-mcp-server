@@ -7,9 +7,10 @@ CockroachDB to AI agents as a set of typed tools.
 
 ```
 cockroachdb-mcp-server/
-├── main.go        # stdio entrypoint, --version, graceful shutdown
+├── main.go        # stdio + http entrypoint, --version, graceful shutdown
 ├── config/        # env-driven configuration and DSN builder
 ├── db/            # pgx pool and SQL execution
+├── auth/          # bearer-token HTTP middleware
 └── tools/         # MCP tool handlers and JSON input schemas
 ```
 
@@ -63,13 +64,48 @@ Or the cert-based vars:
 | `CRDB_MCP_MAX_ROWS_COUNT` | Caps the max LIMIT a list-style tool will issue to CRDB. Must be a positive integer. | `10000` |
 | `CRDB_MCP_ENABLE_WRITE_QUERIES` | Gates the write tools (`create_database`, `create_table`, `insert_rows`) that land in a follow-up PR. `false` keeps the server read-only | `false` |
 | `CRDB_MCP_ALLOW_PASSWORD_AUTH` | Opt-in to password-based auth (rejected by default) | `false` |
+| `CRDB_MCP_TRANSPORT` | Transport to serve MCP on. `stdio` or `http` | `stdio` |
+| `CRDB_MCP_HTTP_LISTEN_ADDR` | Listen address when `CRDB_MCP_TRANSPORT=http` | `:8080` |
+| `CRDB_MCP_BEARER_TOKEN` | Bearer token clients must present in `Authorization: Bearer <token>`. Required when `CRDB_MCP_TRANSPORT=http`; must be at least 16 characters | - |
+| `CRDB_MCP_TLS_CERT` | PEM-encoded server certificate path. Required for HTTPS unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` | - |
+| `CRDB_MCP_TLS_KEY` | PEM-encoded private key path. Required for HTTPS unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` | - |
+| `CRDB_MCP_ALLOW_INSECURE_HTTP` | Explicit opt-in to run HTTP mode without TLS (cleartext). Intended for deployments behind a TLS-terminating reverse proxy | `false` |
 
 ## Run
+
+Default is stdio:
 
 ```bash
 export CRDB_DATABASE_URL="postgresql://user@host:26257/defaultdb?sslmode=verify-full&sslcert=/path/client.crt&sslkey=/path/client.key&sslrootcert=/path/ca.crt"
 ./bin/cockroachdb-mcp-server
 ```
+
+Or as an HTTPS service with bearer-token auth:
+
+```bash
+export CRDB_DATABASE_URL="postgresql://..."
+export CRDB_MCP_TRANSPORT=http
+export CRDB_MCP_HTTP_LISTEN_ADDR=:8443
+export CRDB_MCP_BEARER_TOKEN="$(openssl rand -hex 32)"
+export CRDB_MCP_TLS_CERT=/etc/mcp/tls.crt
+export CRDB_MCP_TLS_KEY=/etc/mcp/tls.key
+./bin/cockroachdb-mcp-server
+```
+
+If you terminate TLS at a trusted reverse proxy, opt into cleartext HTTP explicitly:
+
+```bash
+export CRDB_MCP_TRANSPORT=http
+export CRDB_MCP_BEARER_TOKEN="$(openssl rand -hex 32)"
+export CRDB_MCP_ALLOW_INSECURE_HTTP=true
+./bin/cockroachdb-mcp-server
+```
+
+> **HTTP mode is TLS-by-default.** Starting without `CRDB_MCP_TLS_CERT` and
+> `CRDB_MCP_TLS_KEY` is rejected unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` is
+> set, in which case a startup warning is logged. `/healthz` and `/ready` are
+> unauthenticated and `GET`/`HEAD`-only for orchestrator probes; all other
+> paths require the bearer token.
 
 ### Tools shipped today
 

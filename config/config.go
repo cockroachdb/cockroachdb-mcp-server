@@ -24,12 +24,26 @@ const (
 	envQueryTimeout       = "CRDB_MCP_QUERY_TIMEOUT"
 	envMaxRowsCount       = "CRDB_MCP_MAX_ROWS_COUNT"
 	envAllowPasswordAuth  = "CRDB_MCP_ALLOW_PASSWORD_AUTH"
+	envTransport          = "CRDB_MCP_TRANSPORT"
+	envHTTPListenAddr     = "CRDB_MCP_HTTP_LISTEN_ADDR"
+	envBearerToken        = "CRDB_MCP_BEARER_TOKEN"
+	envTLSCert            = "CRDB_MCP_TLS_CERT"
+	envTLSKey             = "CRDB_MCP_TLS_KEY"
+	envAllowInsecureHTTP  = "CRDB_MCP_ALLOW_INSECURE_HTTP"
 
 	defaultPort               = 26257
 	defaultSSLMode            = "verify-full"
 	defaultQueryTimeout       = 30 * time.Second
 	defaultMaxRowsCount int64 = 10000
+	defaultTransport          = "stdio"
+	defaultHTTPListenAddr     = ":8080"
+	minBearerTokenLength      = 16
 	bootstrapDB               = "defaultdb"
+
+	// TransportStdio runs the server over stdin/stdout (default).
+	TransportStdio = "stdio"
+	// TransportHTTP runs the server as an HTTP service with bearer-token auth.
+	TransportHTTP = "http"
 )
 
 // Config holds the server configuration.
@@ -47,6 +61,12 @@ type Config struct {
 	QueryTimeout       time.Duration
 	MaxRowsCount       int64
 	AllowPasswordAuth  bool
+	Transport          string
+	HTTPListenAddr     string
+	BearerToken        string
+	TLSCert            string
+	TLSKey             string
+	AllowInsecureHTTP  bool
 }
 
 // Load reads configuration from environment variables.
@@ -56,10 +76,44 @@ type Config struct {
 //     CRDB_SSL_KEYFILE, and CRDB_SSL_CA_PATH for verify-ca/verify-full.
 func Load() (*Config, error) {
 	cfg := &Config{
-		DatabaseURL:  os.Getenv(envDatabaseURL),
-		Port:         defaultPort,
-		QueryTimeout: defaultQueryTimeout,
-		MaxRowsCount: defaultMaxRowsCount,
+		DatabaseURL:    os.Getenv(envDatabaseURL),
+		Port:           defaultPort,
+		QueryTimeout:   defaultQueryTimeout,
+		MaxRowsCount:   defaultMaxRowsCount,
+		Transport:      defaultTransport,
+		HTTPListenAddr: defaultHTTPListenAddr,
+		BearerToken:    os.Getenv(envBearerToken),
+		TLSCert:        os.Getenv(envTLSCert),
+		TLSKey:         os.Getenv(envTLSKey),
+	}
+	if raw := os.Getenv(envTransport); raw != "" {
+		cfg.Transport = raw
+	}
+	if raw := os.Getenv(envHTTPListenAddr); raw != "" {
+		cfg.HTTPListenAddr = raw
+	}
+	if raw := os.Getenv(envAllowInsecureHTTP); raw != "" {
+		v, err := strconv.ParseBool(raw)
+		if err != nil {
+			return nil, errors.Wrapf(err, "%s must be a boolean", envAllowInsecureHTTP)
+		}
+		cfg.AllowInsecureHTTP = v
+	}
+	switch cfg.Transport {
+	case TransportStdio:
+	case TransportHTTP:
+		if cfg.BearerToken == "" {
+			return nil, errors.Newf("%s is required when %s=%s", envBearerToken, envTransport, TransportHTTP)
+		}
+		if len(cfg.BearerToken) < minBearerTokenLength {
+			return nil, errors.Newf("%s must be at least %d characters", envBearerToken, minBearerTokenLength)
+		}
+		if err := validateHTTPTLS(cfg); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, errors.Newf("%s=%q is not allowed; use %q or %q",
+			envTransport, cfg.Transport, TransportStdio, TransportHTTP)
 	}
 
 	// CRDB_PORT applies only in cert-based mode; URL mode takes the port from
@@ -204,6 +258,44 @@ func loadCertConfig(cfg *Config) (*Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+// TLSEnabled reports whether the HTTP transport should be served over TLS.
+func (c *Config) TLSEnabled() bool {
+	return c.TLSCert != "" && c.TLSKey != ""
+}
+
+// validateHTTPTLS enforces the SECSERV-422 default-secure policy: HTTP mode
+// must serve TLS unless the operator explicitly opts into cleartext via
+// CRDB_MCP_ALLOW_INSECURE_HTTP=true. Cert and key are required together, and
+// any path provided must exist on disk.
+func validateHTTPTLS(cfg *Config) error {
+	switch {
+	case cfg.TLSCert != "" && cfg.TLSKey == "":
+		return errors.Newf("%s is set but %s is empty; both are required for TLS", envTLSCert, envTLSKey)
+	case cfg.TLSKey != "" && cfg.TLSCert == "":
+		return errors.Newf("%s is set but %s is empty; both are required for TLS", envTLSKey, envTLSCert)
+	case cfg.TLSCert == "" && cfg.TLSKey == "" && !cfg.AllowInsecureHTTP:
+		return errors.Newf(
+			"HTTP transport requires TLS: set %s and %s, or explicitly opt into cleartext with %s=true",
+			envTLSCert, envTLSKey, envAllowInsecureHTTP)
+	}
+	for label, path := range map[string]string{
+		envTLSCert: cfg.TLSCert,
+		envTLSKey:  cfg.TLSKey,
+	} {
+		if path == "" {
+			continue
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return errors.Wrapf(err, "%s: TLS file not accessible", label)
+		}
+		if !info.Mode().IsRegular() {
+			return errors.Newf("%s=%q is not a regular file", label, path)
+		}
+	}
+	return nil
 }
 
 func allowedSSLMode(mode string) bool {
