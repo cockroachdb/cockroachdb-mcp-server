@@ -38,6 +38,8 @@ const (
 	envTxnQoS             = "CRDB_MCP_TXN_QOS"
 	envLogLevel           = "CRDB_MCP_LOG_LEVEL"
 	envLogPath            = "CRDB_MCP_LOG_PATH"
+	envOTelFile           = "CRDB_MCP_OTEL_FILE"
+	envOTLPEndpoint       = "OTEL_EXPORTER_OTLP_ENDPOINT"
 
 	defaultPort               = 26257
 	defaultSSLMode            = "verify-full"
@@ -91,6 +93,8 @@ type Config struct {
 	// AllowNoBearer lets HTTP mode start without a bearer token. Auth must
 	// then be provided upstream (reverse proxy, gateway, mTLS).
 	AllowNoBearer bool
+	OTelFile      string
+	OTLPEndpoint  string
 }
 
 // Load reads configuration from environment variables.
@@ -112,6 +116,8 @@ func Load() (*Config, error) {
 		TLSKey:         os.Getenv(envTLSKey),
 		LogLevel:       defaultLogLevel,
 		LogPath:        os.Getenv(envLogPath),
+		OTelFile:       os.Getenv(envOTelFile),
+		OTLPEndpoint:   os.Getenv(envOTLPEndpoint),
 	}
 	if raw := os.Getenv(envTransport); raw != "" {
 		cfg.Transport = raw
@@ -352,6 +358,11 @@ func loadCertConfig(cfg *Config) (*Config, error) {
 // TLSEnabled reports whether the HTTP transport should be served over TLS.
 func (c *Config) TLSEnabled() bool {
 	return c.TLSCert != "" && c.TLSKey != ""
+}
+
+// OTelEnabled reports whether an OpenTelemetry exporter is configured.
+func (c *Config) OTelEnabled() bool {
+	return c.OTelFile != "" || c.OTLPEndpoint != ""
 }
 
 // validateHTTPTLS enforces the SECSERV-422 default-secure policy: HTTP mode
