@@ -11,7 +11,8 @@ import (
 func (h *ToolHandlers) listSQLUsers(
 	ctx context.Context, _ *mcp.CallToolRequest, params ListSQLUsersParams,
 ) (*mcp.CallToolResult, any, error) {
-	sql, err := h.applyLimitOffset("SHOW USERS", params.Limit, params.Offset)
+	const query = `SELECT * FROM [SHOW USERS]`
+	sql, err := h.applyLimitOffset(query, params.Limit, params.Offset)
 	if err != nil {
 		return nil, nil, err
 	}
