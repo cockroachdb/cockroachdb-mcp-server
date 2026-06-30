@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -34,11 +35,14 @@ const (
 	envAllowInsecureHTTP  = "CRDB_MCP_ALLOW_INSECURE_HTTP"
 	envMaxConns           = "CRDB_MCP_MAX_CONNS"
 	envTxnQoS             = "CRDB_MCP_TXN_QOS"
+	envLogLevel           = "CRDB_MCP_LOG_LEVEL"
+	envLogPath            = "CRDB_MCP_LOG_PATH"
 
 	defaultPort               = 26257
 	defaultSSLMode            = "verify-full"
 	defaultQueryTimeout       = 30 * time.Second
 	defaultMaxRowsCount int64 = 10000
+	defaultLogLevel           = zapcore.InfoLevel
 	defaultMaxConns     int32 = 10
 	// maxAllowedConns caps user-supplied CRDB_MCP_MAX_CONNS.
 	maxAllowedConns       int32 = 100
@@ -69,6 +73,8 @@ type Config struct {
 	EnableWriteQueries bool
 	QueryTimeout       time.Duration
 	MaxRowsCount       int64
+	LogLevel           zapcore.Level
+	LogPath            string
 	MaxConns           int32
 	// TxnQoS is set only when CRDB_MCP_TXN_QOS is explicit. Empty means
 	// "let the adapter decide" - the adapter respects a DSN-supplied value
@@ -100,6 +106,8 @@ func Load() (*Config, error) {
 		BearerToken:    os.Getenv(envBearerToken),
 		TLSCert:        os.Getenv(envTLSCert),
 		TLSKey:         os.Getenv(envTLSKey),
+		LogLevel:       defaultLogLevel,
+		LogPath:        os.Getenv(envLogPath),
 	}
 	if raw := os.Getenv(envTransport); raw != "" {
 		cfg.Transport = raw
@@ -129,6 +137,20 @@ func Load() (*Config, error) {
 	default:
 		return nil, errors.Newf("%s=%q is not allowed; use %q or %q",
 			envTransport, cfg.Transport, TransportStdio, TransportHTTP)
+	}
+	if raw := os.Getenv(envLogLevel); raw != "" {
+		level, err := ParseLogLevel(raw)
+		if err != nil {
+			return nil, err
+		}
+		cfg.LogLevel = level
+	}
+	if cfg.LogPath != "" && cfg.LogPath != "-" {
+		f, err := os.OpenFile(cfg.LogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			return nil, errors.Wrapf(err, "%s=%q is not writable", envLogPath, cfg.LogPath)
+		}
+		_ = f.Close()
 	}
 
 	// CRDB_PORT applies only in cert-based mode; URL mode takes the port from
@@ -195,6 +217,24 @@ func Load() (*Config, error) {
 	}
 
 	return loadCertConfig(cfg)
+}
+
+// ParseLogLevel converts a textual log level to zapcore.Level. Accepts debug,
+// info, warn, error (case-insensitive).
+func ParseLogLevel(s string) (zapcore.Level, error) {
+	switch strings.ToLower(s) {
+	case "debug":
+		return zapcore.DebugLevel, nil
+	case "info":
+		return zapcore.InfoLevel, nil
+	case "warn":
+		return zapcore.WarnLevel, nil
+	case "error":
+		return zapcore.ErrorLevel, nil
+	default:
+		return 0, errors.Newf("%s=%q is not allowed; use debug, info, warn, or error",
+			envLogLevel, s)
+	}
 }
 
 // DSN returns the libpq connection string for the configured auth mode.

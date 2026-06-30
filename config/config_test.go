@@ -2,10 +2,12 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zapcore"
 )
 
 const testBearerToken = "test-bearer-token"
@@ -33,6 +35,49 @@ func TestLoad(t *testing.T) {
 		require.Equal(t, defaultMaxRowsCount, cfg.MaxRowsCount)
 		require.Equal(t, defaultMaxConns, cfg.MaxConns)
 		require.Empty(t, cfg.TxnQoS, "txn qos is empty unless env var is explicit; adapter applies the fallback")
+		require.Equal(t, defaultLogLevel, cfg.LogLevel)
+		require.Empty(t, cfg.LogPath, "log path defaults to empty (stderr)")
+	})
+
+	t.Run("log path is captured and validated as writable", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "mcp.log")
+		env := mergeEnv(baseEnv, map[string]string{envLogPath: path})
+		setEnv(t, env)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, path, cfg.LogPath)
+	})
+
+	t.Run("log path '-' is accepted (stderr alias)", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envLogPath: "-"})
+		setEnv(t, env)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, "-", cfg.LogPath)
+	})
+
+	t.Run("unwritable log path is rejected at load time", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envLogPath: "/nonexistent/dir/mcp.log"})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), envLogPath)
+	})
+
+	t.Run("log level override is honored", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envLogLevel: "warn"})
+		setEnv(t, env)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, zapcore.WarnLevel, cfg.LogLevel)
+	})
+
+	t.Run("invalid log level is rejected", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envLogLevel: "trace"})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "expected error for invalid log level")
+		require.Contains(t, err.Error(), "debug, info, warn, or error")
 	})
 
 	t.Run("overrides are honored", func(t *testing.T) {
@@ -319,6 +364,7 @@ func clearEnv(t *testing.T) {
 		envCAPath, envCertFile, envKeyFile, envEnableWriteQueries, envQueryTimeout,
 		envMaxRowsCount, envTransport, envHTTPListenAddr, envBearerToken,
 		envTLSCert, envTLSKey, envAllowInsecureHTTP, envAllowPasswordAuth,
+		envLogLevel, envLogPath,
 	} {
 		t.Setenv(k, "")
 	}

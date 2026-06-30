@@ -7,8 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -16,9 +16,13 @@ import (
 	"github.com/cockroachdb/cockroachdb-mcp-server/auth"
 	"github.com/cockroachdb/cockroachdb-mcp-server/config"
 	"github.com/cockroachdb/cockroachdb-mcp-server/db"
+	"github.com/cockroachdb/cockroachdb-mcp-server/logging"
+	"github.com/cockroachdb/cockroachdb-mcp-server/middleware"
 	"github.com/cockroachdb/cockroachdb-mcp-server/tools"
 	"github.com/cockroachdb/errors"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -41,8 +45,19 @@ func main() {
 		return
 	}
 
+	// Bootstrap logger keeps config-load fatals visible. Stderr-only so a
+	// bad CRDB_MCP_LOG_PATH can't swallow its own error.
+	bootstrap, err := logging.NewLogger(zapcore.InfoLevel, "")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: build bootstrap logger: %v\n", err)
+		os.Exit(1)
+	}
+	zap.ReplaceGlobals(bootstrap)
+
 	if err := run(); err != nil {
-		log.Fatalf("Error: %v", err)
+		zap.L().Error("fatal", zap.Error(err))
+		_ = zap.L().Sync()
+		os.Exit(1)
 	}
 }
 
@@ -51,6 +66,13 @@ func run() error {
 	if err != nil {
 		return errors.Wrap(err, "load config")
 	}
+
+	logger, err := logging.NewLogger(cfg.LogLevel, cfg.LogPath)
+	if err != nil {
+		return errors.Wrapf(err, "open log path %q", cfg.LogPath)
+	}
+	zap.ReplaceGlobals(logger)
+	defer func() { _ = logger.Sync() }()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -65,7 +87,13 @@ func run() error {
 		Name:    serverName,
 		Version: serverVersion,
 	}, nil)
+	server.AddReceivingMiddleware(middleware.ToolCallLogger)
 	tools.NewToolHandlers(dm, cfg).RegisterTools(server)
+
+	zap.L().Info("starting server",
+		zap.String("name", serverName),
+		zap.String("version", serverVersion),
+		zap.String("transport", cfg.Transport))
 
 	switch cfg.Transport {
 	case config.TransportStdio:
@@ -78,7 +106,6 @@ func run() error {
 }
 
 func runStdio(ctx context.Context, server *mcp.Server) error {
-	log.Printf("Starting %s %s on stdio", serverName, serverVersion)
 	if err := server.Run(ctx, &mcp.StdioTransport{}); err != nil &&
 		!stderrors.Is(err, context.Canceled) && !stderrors.Is(err, io.EOF) {
 		return errors.Wrap(err, "server")
@@ -119,12 +146,15 @@ func runHTTP(ctx context.Context, server *mcp.Server, cfg *config.Config) error 
 func serveHTTP(httpServer *http.Server, cfg *config.Config) error {
 	var err error
 	if cfg.TLSEnabled() {
-		log.Printf("Starting %s %s on https %s", serverName, serverVersion, cfg.HTTPListenAddr)
+		zap.L().Info("http transport listening",
+			zap.String("name", serverName),
+			zap.String("addr", cfg.HTTPListenAddr),
+			zap.Bool("tls", true))
 		err = httpServer.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey)
 	} else {
-		log.Printf("WARNING: %s running on http %s without TLS (CRDB_MCP_ALLOW_INSECURE_HTTP=true). "+
-			"Bearer tokens travel in cleartext; terminate TLS at a trusted reverse proxy.",
-			serverName, cfg.HTTPListenAddr)
+		zap.L().Warn("http transport listening without TLS; bearer tokens travel cleartext",
+			zap.String("name", serverName),
+			zap.String("addr", cfg.HTTPListenAddr))
 		err = httpServer.ListenAndServe()
 	}
 	if err != nil && !stderrors.Is(err, http.ErrServerClosed) {
