@@ -33,6 +33,7 @@ const (
 	envTLSCert            = "CRDB_MCP_TLS_CERT"
 	envTLSKey             = "CRDB_MCP_TLS_KEY"
 	envAllowInsecureHTTP  = "CRDB_MCP_ALLOW_INSECURE_HTTP"
+	envAllowNoBearer      = "CRDB_MCP_ALLOW_NO_BEARER"
 	envMaxConns           = "CRDB_MCP_MAX_CONNS"
 	envTxnQoS             = "CRDB_MCP_TXN_QOS"
 	envLogLevel           = "CRDB_MCP_LOG_LEVEL"
@@ -87,6 +88,9 @@ type Config struct {
 	TLSCert           string
 	TLSKey            string
 	AllowInsecureHTTP bool
+	// AllowNoBearer lets HTTP mode start without a bearer token. Auth must
+	// then be provided upstream (reverse proxy, gateway, mTLS).
+	AllowNoBearer bool
 }
 
 // Load reads configuration from environment variables.
@@ -122,13 +126,25 @@ func Load() (*Config, error) {
 		}
 		cfg.AllowInsecureHTTP = v
 	}
+	if raw := os.Getenv(envAllowNoBearer); raw != "" {
+		v, err := strconv.ParseBool(raw)
+		if err != nil {
+			return nil, errors.Wrapf(err, "%s must be a boolean", envAllowNoBearer)
+		}
+		cfg.AllowNoBearer = v
+	}
 	switch cfg.Transport {
 	case TransportStdio:
 	case TransportHTTP:
-		if cfg.BearerToken == "" {
-			return nil, errors.Newf("%s is required when %s=%s", envBearerToken, envTransport, TransportHTTP)
+		if cfg.BearerToken == "" && !cfg.AllowNoBearer {
+			return nil, errors.Newf("%s is required when %s=%s; set %s=true to opt out and provide auth upstream",
+				envBearerToken, envTransport, TransportHTTP, envAllowNoBearer)
 		}
-		if len(cfg.BearerToken) < minBearerTokenLength {
+		if cfg.BearerToken != "" && cfg.AllowNoBearer {
+			return nil, errors.Newf("%s and %s are mutually exclusive; unset one",
+				envBearerToken, envAllowNoBearer)
+		}
+		if cfg.BearerToken != "" && len(cfg.BearerToken) < minBearerTokenLength {
 			return nil, errors.Newf("%s must be at least %d characters", envBearerToken, minBearerTokenLength)
 		}
 		if err := validateHTTPTLS(cfg); err != nil {
