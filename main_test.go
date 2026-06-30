@@ -49,7 +49,7 @@ func TestNewHTTPMux(t *testing.T) {
 	}
 
 	t.Run("with bearer token", func(t *testing.T) {
-		mux := newHTTPMux(token, upstream)
+		mux := newHTTPMux(&config.Config{BearerToken: token}, upstream)
 		run(t, mux, []muxCase{
 			{"healthz bypasses auth", http.MethodGet, "/healthz", "", http.StatusOK, "ok", false},
 			{"ready bypasses auth", http.MethodGet, "/ready", "", http.StatusOK, "ok", false},
@@ -64,7 +64,7 @@ func TestNewHTTPMux(t *testing.T) {
 	})
 
 	t.Run("without bearer token (AllowNoBearer)", func(t *testing.T) {
-		mux := newHTTPMux("", upstream)
+		mux := newHTTPMux(&config.Config{}, upstream)
 		run(t, mux, []muxCase{
 			{"healthz still works", http.MethodGet, "/healthz", "", http.StatusOK, "ok", false},
 			{"ready still works", http.MethodGet, "/ready", "", http.StatusOK, "ok", false},

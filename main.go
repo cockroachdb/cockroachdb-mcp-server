@@ -120,7 +120,7 @@ func runHTTP(ctx context.Context, server *mcp.Server, cfg *config.Config) error 
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPListenAddr,
-		Handler:           newHTTPMux(cfg.BearerToken, mcpHandler),
+		Handler:           newHTTPMux(cfg, mcpHandler),
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		IdleTimeout:       idleTimeout,
@@ -168,18 +168,23 @@ func serveHTTP(httpServer *http.Server, cfg *config.Config) error {
 	return nil
 }
 
-// newHTTPMux returns the top-level HTTP handler: /healthz and /ready are
-// unauthenticated for orchestrator probes; other paths go through the bearer
-// middleware unless the token is empty (CRDB_MCP_ALLOW_NO_BEARER=true).
-func newHTTPMux(bearerToken string, mcpHandler http.Handler) http.Handler {
+// newHTTPMux returns the top-level HTTP handler. /healthz and /ready bypass
+// auth for orchestrator probes. The main chain is, outer to inner:
+// MaxConcurrent (cheap reject under load) -> Bearer (cheap reject of bad
+// tokens; skipped when the token is empty, CRDB_MCP_ALLOW_NO_BEARER=true) ->
+// RateLimit (per-client throttle, keyed by token hash so legit callers share
+// one bucket) -> mcpHandler. Each middleware is a no-op when its config knob
+// is zero.
+func newHTTPMux(cfg *config.Config, mcpHandler http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", health)
 	mux.HandleFunc("/ready", health)
-	if bearerToken == "" {
-		mux.Handle("/", mcpHandler)
-	} else {
-		mux.Handle("/", auth.Bearer(bearerToken, mcpHandler))
+	chain := auth.RateLimit(cfg.HTTPRPS, cfg.HTTPBurst, cfg.HTTPTrustXFF, mcpHandler)
+	if cfg.BearerToken != "" {
+		chain = auth.Bearer(cfg.BearerToken, chain)
 	}
+	chain = auth.MaxConcurrent(cfg.HTTPMaxConcurrent, chain)
+	mux.Handle("/", chain)
 	return mux
 }
 

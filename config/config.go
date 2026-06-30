@@ -38,6 +38,10 @@ const (
 	envTxnQoS             = "CRDB_MCP_TXN_QOS"
 	envLogLevel           = "CRDB_MCP_LOG_LEVEL"
 	envLogPath            = "CRDB_MCP_LOG_PATH"
+	envHTTPRPS            = "CRDB_MCP_HTTP_RPS"
+	envHTTPBurst          = "CRDB_MCP_HTTP_BURST"
+	envHTTPMaxConcurrent  = "CRDB_MCP_HTTP_MAX_CONCURRENT"
+	envHTTPTrustXFF       = "CRDB_MCP_HTTP_TRUST_XFF"
 
 	defaultPort               = 26257
 	defaultSSLMode            = "verify-full"
@@ -91,6 +95,16 @@ type Config struct {
 	// AllowNoBearer lets HTTP mode start without a bearer token. Auth must
 	// then be provided upstream (reverse proxy, gateway, mTLS).
 	AllowNoBearer bool
+	// HTTPRPS is the per-client request-rate limit for HTTP mode. 0 disables.
+	HTTPRPS float64
+	// HTTPBurst is the per-client burst; defaults to 2*HTTPRPS when unset.
+	HTTPBurst int
+	// HTTPMaxConcurrent caps in-flight HTTP requests across all clients. 0 disables.
+	HTTPMaxConcurrent int
+	// HTTPTrustXFF keys the rate limiter by the rightmost X-Forwarded-For
+	// entry for unauthenticated requests. Only safe behind a trusted proxy
+	// that appends to XFF; off by default because the header is client-forgeable.
+	HTTPTrustXFF bool
 }
 
 // Load reads configuration from environment variables.
@@ -223,6 +237,37 @@ func Load() (*Config, error) {
 				envTxnQoS, raw, strings.Join(allowedQoSValues, ", "))
 		}
 		cfg.TxnQoS = v
+	}
+	if raw := os.Getenv(envHTTPRPS); raw != "" {
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil || v < 0 {
+			return nil, errors.Newf("%s must be a non-negative number, got %q", envHTTPRPS, raw)
+		}
+		cfg.HTTPRPS = v
+	}
+	if raw := os.Getenv(envHTTPBurst); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 0 {
+			return nil, errors.Newf("%s must be a non-negative integer, got %q", envHTTPBurst, raw)
+		}
+		cfg.HTTPBurst = v
+	}
+	if raw := os.Getenv(envHTTPMaxConcurrent); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 0 {
+			return nil, errors.Newf("%s must be a non-negative integer, got %q", envHTTPMaxConcurrent, raw)
+		}
+		cfg.HTTPMaxConcurrent = v
+	}
+	if raw := os.Getenv(envHTTPTrustXFF); raw != "" {
+		v, err := strconv.ParseBool(raw)
+		if err != nil {
+			return nil, errors.Wrapf(err, "%s must be a boolean", envHTTPTrustXFF)
+		}
+		cfg.HTTPTrustXFF = v
+	}
+	if cfg.HTTPBurst > 0 && cfg.HTTPRPS <= 0 {
+		return nil, errors.Newf("%s requires %s > 0", envHTTPBurst, envHTTPRPS)
 	}
 
 	if cfg.DatabaseURL != "" {

@@ -355,6 +355,63 @@ func TestLoad(t *testing.T) {
 		_, err := Load()
 		require.Error(t, err, "expected error for invalid txn qos")
 	})
+
+	t.Run("http rps/burst/max-concurrent overrides are honored", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{
+			envHTTPRPS:           "50",
+			envHTTPBurst:         "100",
+			envHTTPMaxConcurrent: "10",
+		})
+		setEnv(t, env)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.InDelta(t, 50.0, cfg.HTTPRPS, 0)
+		require.Equal(t, 100, cfg.HTTPBurst)
+		require.Equal(t, 10, cfg.HTTPMaxConcurrent)
+	})
+
+	t.Run("http throttle defaults are zero (middlewares are no-ops)", func(t *testing.T) {
+		setEnv(t, baseEnv)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.InDelta(t, 0.0, cfg.HTTPRPS, 0)
+		require.Equal(t, 0, cfg.HTTPBurst)
+		require.Equal(t, 0, cfg.HTTPMaxConcurrent)
+	})
+
+	t.Run("negative or non-numeric http throttle values are rejected", func(t *testing.T) {
+		for _, tc := range []struct {
+			name, key, val string
+		}{
+			{"rps negative", envHTTPRPS, "-1"},
+			{"rps non-numeric", envHTTPRPS, "fast"},
+			{"burst negative", envHTTPBurst, "-1"},
+			{"max concurrent non-numeric", envHTTPMaxConcurrent, "many"},
+			{"trust xff non-boolean", envHTTPTrustXFF, "maybe"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				env := mergeEnv(baseEnv, map[string]string{tc.key: tc.val})
+				setEnv(t, env)
+				_, err := Load()
+				require.Errorf(t, err, "expected error for %s=%q", tc.key, tc.val)
+			})
+		}
+	})
+
+	t.Run("burst without rps is rejected", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envHTTPBurst: "100"})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "burst is meaningless with the limiter disabled")
+	})
+
+	t.Run("trust xff is parsed", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envHTTPTrustXFF: "true"})
+		setEnv(t, env)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.True(t, cfg.HTTPTrustXFF)
+	})
 }
 
 func TestDSN(t *testing.T) {
