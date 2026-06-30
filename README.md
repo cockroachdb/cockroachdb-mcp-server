@@ -58,7 +58,7 @@ Or the cert-based vars:
 > process's environment. To protect those credentials, password-based auth is
 > rejected by default. Set `CRDB_MCP_ALLOW_PASSWORD_AUTH=true` to opt in.
 
-**Behaviour:**
+**Behavior:**
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
