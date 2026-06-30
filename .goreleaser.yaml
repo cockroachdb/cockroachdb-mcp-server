@@ -7,11 +7,12 @@ before:
     - go mod tidy
 
 builds:
+  # darwin excluded: cockroachdb-parser pulls gosigar which needs cgo on darwin.
+  # macOS users: use the Docker image (linux/arm64 runs natively on Apple Silicon).
   - env:
       - CGO_ENABLED=0
     goos:
       - linux
-      - darwin
       - windows
     goarch:
       - amd64
@@ -63,6 +64,3 @@ dockers_v2:
       org.opencontainers.image.created: "{{ .Date }}"
       org.opencontainers.image.licenses: Apache-2.0
 
-release:
-  # TODO(rahulcrl): remove when the repo goes public.
-  disable: true

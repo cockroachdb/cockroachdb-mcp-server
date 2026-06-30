@@ -26,6 +26,8 @@ go build -o bin/cockroachdb-mcp-server .
 ./bin/cockroachdb-mcp-server --version
 ```
 
+> Pre-built binaries cover `linux/{amd64,arm64}` and `windows/{amd64,arm64}`. macOS users: use the Docker image (runs natively on Apple Silicon) or `go install github.com/cockroachdb/cockroachdb-mcp-server@latest`.
+
 ## Configuration
 
 All configuration is via environment variables. `sslmode` must be `require`,
