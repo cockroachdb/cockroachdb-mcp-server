@@ -4,9 +4,11 @@ package auth
 import (
 	"crypto/sha256"
 	"crypto/subtle"
-	"log"
 	"net/http"
 	"strings"
+
+	"github.com/cockroachdb/cockroachdb-mcp-server/logging"
+	"go.uber.org/zap"
 )
 
 const bearerPrefix = "Bearer "
@@ -37,6 +39,10 @@ func Bearer(token string, next http.Handler) http.Handler {
 }
 
 func reject(w http.ResponseWriter, r *http.Request) {
-	log.Printf("auth failed: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+	logging.L(r.Context()).Warn("auth failed",
+		zap.String("method", r.Method),
+		zap.String("path", r.URL.Path),
+		zap.String("remote", r.RemoteAddr),
+	)
 	http.Error(w, "unauthorized", http.StatusUnauthorized)
 }

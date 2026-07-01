@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestBearer(t *testing.T) {
@@ -38,4 +41,20 @@ func TestBearer(t *testing.T) {
 			require.Equal(t, tc.wantBody, rec.Body.String())
 		})
 	}
+}
+
+func TestBearerLogsRejection(t *testing.T) {
+	core, recorded := observer.New(zapcore.WarnLevel)
+	defer zap.ReplaceGlobals(zap.New(core))()
+
+	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	rec := httptest.NewRecorder()
+	Bearer("secret", nil).ServeHTTP(rec, req)
+
+	entries := recorded.All()
+	require.Len(t, entries, 1)
+	require.Equal(t, "auth failed", entries[0].Message)
+	fields := entries[0].ContextMap()
+	require.Equal(t, http.MethodGet, fields["method"])
+	require.Equal(t, "/mcp", fields["path"])
 }

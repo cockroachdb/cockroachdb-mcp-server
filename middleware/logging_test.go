@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/cockroachdb/errors"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -58,6 +59,22 @@ func TestToolCallLogger(t *testing.T) {
 		require.Equal(t, zapcore.ErrorLevel, entries[0].Level)
 		require.Equal(t, "tool call failed", entries[0].Message)
 		require.Equal(t, "boom", entries[0].ContextMap()["error"])
+	})
+
+	t.Run("pgx error detail is redacted in the log record", func(t *testing.T) {
+		recorded := withObservedLogger(t)
+		pgErr := &pgconn.PgError{Code: "42601", Message: `syntax error near "secret_value"`}
+		next := func(context.Context, string, mcp.Request) (mcp.Result, error) {
+			return nil, errors.Wrap(pgErr, "select query")
+		}
+		_, err := ToolCallLogger(next)(context.Background(), methodCallTool, callToolReq())
+		require.Error(t, err)
+
+		entries := recorded.AllUntimed()
+		require.Len(t, entries, 1)
+		logged, _ := entries[0].ContextMap()["error"].(string)
+		require.Contains(t, logged, "42601")
+		require.NotContains(t, logged, "secret_value")
 	})
 
 	t.Run("CallToolResult.IsError emits warn record", func(t *testing.T) {
