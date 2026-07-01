@@ -144,6 +144,11 @@ func runHTTP(ctx context.Context, server *mcp.Server, cfg *config.Config) error 
 }
 
 func serveHTTP(httpServer *http.Server, cfg *config.Config) error {
+	if cfg.AllowNoBearer {
+		zap.L().Warn("bearer-token enforcement disabled; ensure auth is provided upstream (reverse proxy, gateway, k8s NetworkPolicy, etc)",
+			zap.String("name", serverName),
+			zap.String("opt_out_env", "CRDB_MCP_ALLOW_NO_BEARER"))
+	}
 	var err error
 	if cfg.TLSEnabled() {
 		zap.L().Info("http transport listening",
@@ -164,13 +169,17 @@ func serveHTTP(httpServer *http.Server, cfg *config.Config) error {
 }
 
 // newHTTPMux returns the top-level HTTP handler: /healthz and /ready are
-// unauthenticated so orchestrators can probe without holding the bearer
-// token; every other path goes through the bearer middleware.
+// unauthenticated for orchestrator probes; other paths go through the bearer
+// middleware unless the token is empty (CRDB_MCP_ALLOW_NO_BEARER=true).
 func newHTTPMux(bearerToken string, mcpHandler http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", health)
 	mux.HandleFunc("/ready", health)
-	mux.Handle("/", auth.Bearer(bearerToken, mcpHandler))
+	if bearerToken == "" {
+		mux.Handle("/", mcpHandler)
+	} else {
+		mux.Handle("/", auth.Bearer(bearerToken, mcpHandler))
+	}
 	return mux
 }
 

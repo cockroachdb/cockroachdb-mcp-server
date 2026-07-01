@@ -19,42 +19,60 @@ func TestNewHTTPMux(t *testing.T) {
 		upstreamHit = true
 		w.WriteHeader(http.StatusOK)
 	})
-	mux := newHTTPMux(token, upstream)
 
-	cases := []struct {
+	type muxCase struct {
 		name            string
 		method, path    string
 		authHeader      string
 		wantStatus      int
 		wantBody        string
 		wantUpstreamHit bool
-	}{
-		{"healthz bypasses auth", http.MethodGet, "/healthz", "", http.StatusOK, "ok", false},
-		{"ready bypasses auth", http.MethodGet, "/ready", "", http.StatusOK, "ok", false},
-		{"health is reachable even with a token (no-op)", http.MethodGet, "/healthz", "Bearer " + token, http.StatusOK, "ok", false},
-		{"healthz HEAD is allowed", http.MethodHead, "/healthz", "", http.StatusOK, "", false},
-		{"healthz POST is rejected", http.MethodPost, "/healthz", "", http.StatusMethodNotAllowed, "method not allowed\n", false},
-		{"ready DELETE is rejected", http.MethodDelete, "/ready", "", http.StatusMethodNotAllowed, "method not allowed\n", false},
-		{"root path without token is 401", http.MethodPost, "/", "", http.StatusUnauthorized, "unauthorized\n", false},
-		{"root path with wrong token is 401", http.MethodPost, "/", "Bearer nope", http.StatusUnauthorized, "unauthorized\n", false},
-		{"root path with valid token reaches upstream", http.MethodPost, "/", "Bearer " + token, http.StatusOK, "", true},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			upstreamHit = false
-			req := httptest.NewRequest(tc.method, tc.path, nil)
-			if tc.authHeader != "" {
-				req.Header.Set("Authorization", tc.authHeader)
-			}
-			rec := httptest.NewRecorder()
-			mux.ServeHTTP(rec, req)
-			require.Equal(t, tc.wantStatus, rec.Code)
-			if tc.wantBody != "" {
-				require.Equal(t, tc.wantBody, rec.Body.String())
-			}
-			require.Equal(t, tc.wantUpstreamHit, upstreamHit)
+	run := func(t *testing.T, mux http.Handler, cases []muxCase) {
+		t.Helper()
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				upstreamHit = false
+				req := httptest.NewRequest(tc.method, tc.path, nil)
+				if tc.authHeader != "" {
+					req.Header.Set("Authorization", tc.authHeader)
+				}
+				rec := httptest.NewRecorder()
+				mux.ServeHTTP(rec, req)
+				require.Equal(t, tc.wantStatus, rec.Code)
+				if tc.wantBody != "" {
+					require.Equal(t, tc.wantBody, rec.Body.String())
+				}
+				require.Equal(t, tc.wantUpstreamHit, upstreamHit)
+			})
+		}
+	}
+
+	t.Run("with bearer token", func(t *testing.T) {
+		mux := newHTTPMux(token, upstream)
+		run(t, mux, []muxCase{
+			{"healthz bypasses auth", http.MethodGet, "/healthz", "", http.StatusOK, "ok", false},
+			{"ready bypasses auth", http.MethodGet, "/ready", "", http.StatusOK, "ok", false},
+			{"health is reachable even with a token (no-op)", http.MethodGet, "/healthz", "Bearer " + token, http.StatusOK, "ok", false},
+			{"healthz HEAD is allowed", http.MethodHead, "/healthz", "", http.StatusOK, "", false},
+			{"healthz POST is rejected", http.MethodPost, "/healthz", "", http.StatusMethodNotAllowed, "method not allowed\n", false},
+			{"ready DELETE is rejected", http.MethodDelete, "/ready", "", http.StatusMethodNotAllowed, "method not allowed\n", false},
+			{"root path without token is 401", http.MethodPost, "/", "", http.StatusUnauthorized, "unauthorized\n", false},
+			{"root path with wrong token is 401", http.MethodPost, "/", "Bearer nope", http.StatusUnauthorized, "unauthorized\n", false},
+			{"root path with valid token reaches upstream", http.MethodPost, "/", "Bearer " + token, http.StatusOK, "", true},
 		})
-	}
+	})
+
+	t.Run("without bearer token (AllowNoBearer)", func(t *testing.T) {
+		mux := newHTTPMux("", upstream)
+		run(t, mux, []muxCase{
+			{"healthz still works", http.MethodGet, "/healthz", "", http.StatusOK, "ok", false},
+			{"ready still works", http.MethodGet, "/ready", "", http.StatusOK, "ok", false},
+			{"healthz POST is still rejected", http.MethodPost, "/healthz", "", http.StatusMethodNotAllowed, "method not allowed\n", false},
+			{"root path without auth header reaches upstream", http.MethodPost, "/", "", http.StatusOK, "", true},
+			{"root path with stray auth header is ignored and reaches upstream", http.MethodPost, "/", "Bearer whatever", http.StatusOK, "", true},
+		})
+	})
 }
 
 // TestRunHTTPShutdown verifies runHTTP returns cleanly when its context is

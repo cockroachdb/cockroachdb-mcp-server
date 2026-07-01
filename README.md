@@ -68,10 +68,11 @@ Or the cert-based vars:
 | `CRDB_MCP_TXN_QOS` | Default transaction QoS for MCP sessions. One of `background`, `regular`, `critical`. | `background` |
 | `CRDB_MCP_TRANSPORT` | Transport to serve MCP on. `stdio` or `http` | `stdio` |
 | `CRDB_MCP_HTTP_LISTEN_ADDR` | Listen address when `CRDB_MCP_TRANSPORT=http` | `:8080` |
-| `CRDB_MCP_BEARER_TOKEN` | Bearer token clients must present in `Authorization: Bearer <token>`. Required when `CRDB_MCP_TRANSPORT=http`; must be at least 16 characters | - |
+| `CRDB_MCP_BEARER_TOKEN` | Bearer token clients must present in `Authorization: Bearer <token>`. Required when `CRDB_MCP_TRANSPORT=http` unless `CRDB_MCP_ALLOW_NO_BEARER=true`; must be at least 16 characters when set | - |
 | `CRDB_MCP_TLS_CERT` | PEM-encoded server certificate path. Required for HTTPS unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` | - |
 | `CRDB_MCP_TLS_KEY` | PEM-encoded private key path. Required for HTTPS unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` | - |
 | `CRDB_MCP_ALLOW_INSECURE_HTTP` | Explicit opt-in to run HTTP mode without TLS (cleartext). Intended for deployments behind a TLS-terminating reverse proxy | `false` |
+| `CRDB_MCP_ALLOW_NO_BEARER` | Explicit opt-in to run HTTP mode without bearer-token enforcement. Intended for deployments where auth is provided upstream (reverse proxy, gateway, mTLS, k8s NetworkPolicy). A startup warning is logged. | `false` |
 | `CRDB_MCP_LOG_LEVEL` | Log level for the structured JSON logger (see `CRDB_MCP_LOG_PATH`). One of `debug`, `info`, `warn`, `error` | `info` |
 | `CRDB_MCP_LOG_PATH` | Append logs to this file path. Use `-` for stderr. No rotation; use logrotate or your orchestrator. | - |
 

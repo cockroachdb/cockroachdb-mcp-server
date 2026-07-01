@@ -202,6 +202,53 @@ func TestLoad(t *testing.T) {
 		require.False(t, cfg.TLSEnabled())
 	})
 
+	t.Run("http transport without bearer mentions the opt-out env", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envTransport: TransportHTTP})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err)
+		require.Containsf(t, err.Error(), envAllowNoBearer, "error should name the opt-out env: %v", err)
+	})
+
+	t.Run("http transport with no-bearer opt-in is accepted without a token", func(t *testing.T) {
+		tlsCert, tlsKey := writeTempTLS(t)
+		env := mergeEnv(baseEnv, map[string]string{
+			envTransport:     TransportHTTP,
+			envAllowNoBearer: "true",
+			envTLSCert:       tlsCert,
+			envTLSKey:        tlsKey,
+		})
+		setEnv(t, env)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.True(t, cfg.AllowNoBearer)
+		require.Empty(t, cfg.BearerToken)
+	})
+
+	t.Run("bearer token and no-bearer opt-in together are rejected", func(t *testing.T) {
+		tlsCert, tlsKey := writeTempTLS(t)
+		env := mergeEnv(baseEnv, map[string]string{
+			envTransport:     TransportHTTP,
+			envBearerToken:   testBearerToken,
+			envAllowNoBearer: "true",
+			envTLSCert:       tlsCert,
+			envTLSKey:        tlsKey,
+		})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err)
+		require.Containsf(t, err.Error(), envBearerToken, "error should name bearer env: %v", err)
+		require.Containsf(t, err.Error(), envAllowNoBearer, "error should name opt-out env: %v", err)
+		require.Contains(t, err.Error(), "mutually exclusive")
+	})
+
+	t.Run("invalid no-bearer opt-in bool is rejected", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envAllowNoBearer: "not-a-bool"})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err)
+	})
+
 	t.Run("http transport with only tls cert is rejected", func(t *testing.T) {
 		tlsCert := t.TempDir()
 		env := mergeEnv(baseEnv, map[string]string{
