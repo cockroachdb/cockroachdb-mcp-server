@@ -75,6 +75,10 @@ Or the cert-based vars:
 | `CRDB_MCP_TLS_KEY` | PEM-encoded private key path. Required for HTTPS unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` | - |
 | `CRDB_MCP_ALLOW_INSECURE_HTTP` | Explicit opt-in to run HTTP mode without TLS (cleartext). Intended for deployments behind a TLS-terminating reverse proxy | `false` |
 | `CRDB_MCP_ALLOW_NO_BEARER` | Explicit opt-in to run HTTP mode without bearer-token enforcement. Intended for deployments where auth is provided upstream (reverse proxy, gateway, mTLS, k8s NetworkPolicy). A startup warning is logged. | `false` |
+| `CRDB_MCP_HTTP_RPS` | Token-bucket rate limit, requests per second. `0` disables. Keyed by bearer-token hash when present, so all clients sharing the server token share one bucket (effectively a global rate). Unauthenticated requests are keyed by client address. | `0` |
+| `CRDB_MCP_HTTP_BURST` | Rate-limit burst size. Defaults to `2 * CRDB_MCP_HTTP_RPS` when unset; requires `CRDB_MCP_HTTP_RPS > 0`. | `0` |
+| `CRDB_MCP_HTTP_MAX_CONCURRENT` | Cap on in-flight HTTP requests across all clients. Excess requests get `503 server busy` with `Retry-After: 1`. `0` disables. | `0` |
+| `CRDB_MCP_HTTP_TRUST_XFF` | Key unauthenticated rate-limit clients by the rightmost `X-Forwarded-For` entry instead of `RemoteAddr`. Enable only behind a trusted proxy that appends to `X-Forwarded-For`; the header is client-forgeable otherwise. | `false` |
 | `CRDB_MCP_LOG_LEVEL` | Log level for the structured JSON logger (see `CRDB_MCP_LOG_PATH`). One of `debug`, `info`, `warn`, `error` | `info` |
 | `CRDB_MCP_LOG_PATH` | Append logs to this file path. Use `-` for stderr. No rotation; use logrotate or your orchestrator. | - |
 
