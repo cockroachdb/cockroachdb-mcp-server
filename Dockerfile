@@ -9,4 +9,9 @@ COPY ${TARGETOS}/${TARGETARCH}/cockroachdb-mcp-server /usr/local/bin/cockroachdb
 
 USER nonroot:nonroot
 
+# Distroless has no curl/shell, so the binary probes itself: GET /healthz in
+# HTTP mode, no-op success in stdio mode. Orchestrator probes take precedence.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+	CMD ["/usr/local/bin/cockroachdb-mcp-server", "-healthcheck"]
+
 ENTRYPOINT ["/usr/local/bin/cockroachdb-mcp-server"]

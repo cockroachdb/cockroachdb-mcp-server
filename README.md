@@ -123,6 +123,13 @@ export CRDB_MCP_ALLOW_INSECURE_HTTP=true
 > unauthenticated and `GET`/`HEAD`-only for orchestrator probes; all other
 > paths require the bearer token.
 
+### Container health check
+
+The Docker image (distroless, no shell) defines a `HEALTHCHECK` that runs the
+binary with `-healthcheck`: in HTTP mode it GETs `/healthz` on the configured
+listen address (wildcard hosts rewritten to loopback); in stdio mode it exits
+0. Orchestrator probes (k8s, ECS, Nomad) take precedence.
+
 ### Tools shipped today
 
 | Tool | Description |

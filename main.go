@@ -3,13 +3,16 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	stderrors "errors"
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -27,21 +30,33 @@ import (
 )
 
 const (
-	serverName        = "cockroachdb-mcp-server"
-	shutdownPeriod    = 10 * time.Second
-	readHeaderTimeout = 10 * time.Second
-	readTimeout       = 30 * time.Second
-	idleTimeout       = 120 * time.Second
-	maxHeaderBytes    = 32 << 10 // 32 KiB
+	serverName         = "cockroachdb-mcp-server"
+	shutdownPeriod     = 10 * time.Second
+	readHeaderTimeout  = 10 * time.Second
+	readTimeout        = 30 * time.Second
+	idleTimeout        = 120 * time.Second
+	maxHeaderBytes     = 32 << 10 // 32 KiB
+	healthCheckTimeout = 3 * time.Second
 )
 
 var serverVersion = "0.1.0"
 
 func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")
+	healthCheck := flag.Bool("healthcheck", false, "probe local /healthz and exit 0/1; intended for Docker HEALTHCHECK in HTTP mode")
 	flag.Parse()
 	if *showVersion {
 		fmt.Printf("%s %s\n", serverName, serverVersion)
+		return
+	}
+	if *healthCheck {
+		if !healthCheckEnabled() {
+			return
+		}
+		if err := probeHealthz(healthCheckURL()); err != nil {
+			fmt.Fprintf(os.Stderr, "healthcheck failed: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -59,6 +74,53 @@ func main() {
 		_ = zap.L().Sync()
 		os.Exit(1)
 	}
+}
+
+// healthCheckEnabled reports whether the self-probe applies: /healthz only
+// exists in HTTP mode, so stdio containers pass trivially.
+func healthCheckEnabled() bool {
+	return strings.EqualFold(os.Getenv("CRDB_MCP_TRANSPORT"), config.TransportHTTP)
+}
+
+// healthCheckURL derives the probe URL from the server's own listen env vars,
+// rewriting wildcard hosts to loopback.
+func healthCheckURL() string {
+	addr := os.Getenv("CRDB_MCP_HTTP_LISTEN_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	if host, port, err := net.SplitHostPort(addr); err == nil {
+		switch host {
+		case "", "0.0.0.0", "::":
+			host = "127.0.0.1"
+		}
+		addr = net.JoinHostPort(host, port)
+	}
+	scheme := "http"
+	if os.Getenv("CRDB_MCP_TLS_CERT") != "" && os.Getenv("CRDB_MCP_TLS_KEY") != "" {
+		scheme = "https"
+	}
+	return scheme + "://" + addr + "/healthz"
+}
+
+// probeHealthz issues a single GET and returns nil only on 200. TLS
+// verification is skipped: this is a loopback self-check.
+func probeHealthz(url string) error {
+	client := &http.Client{
+		Timeout: healthCheckTimeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // loopback self-probe
+		},
+	}
+	resp, err := client.Get(url)
+	if err != nil {
+		return errors.Wrap(err, "probe healthz")
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return errors.Newf("/healthz returned %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func run() error {
