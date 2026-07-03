@@ -1,163 +1,251 @@
+<p align="center">
+  <img src='docs/media/cockroachdb.png?raw=true' alt='CockroachDB' width='70%'>
+</p>
+
 # CockroachDB MCP Server
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server that exposes
-CockroachDB to AI agents as a set of typed tools.
+CockroachDB MCP Server is a [Model Context Protocol](https://modelcontextprotocol.io)
+server that exposes CockroachDB to AI agents as a set of typed tools. Ships read
+tools by default; write and DDL tools opt in via env var.
 
-## Project structure
+- [Install](#install)
+- [Setup - MCP client config](#setup---mcp-client-config)
+- [Configuration](#configuration)
+- [Tools](#tools)
+- [Testing](#testing)
+- [Contributing](#contributing)
+- [Security](#security)
+- [License](#license)
 
-```
-cockroachdb-mcp-server/
-├── main.go        # stdio + http entrypoint, --version, graceful shutdown
-├── config/        # env-driven configuration and DSN builder
-├── db/            # pgx pool and SQL execution
-├── auth/          # bearer-token HTTP middleware
-└── tools/         # MCP tool handlers and JSON input schemas
-```
+## Install
 
-## Prerequisites
+Requires Go 1.25+ and a reachable CockroachDB cluster.
 
-- Go 1.25+
-- A reachable CockroachDB cluster (local or CockroachCloud)
-
-## Build
+### `go install`
 
 ```bash
+go install github.com/cockroachdb/cockroachdb-mcp-server@latest
+```
+
+The binary lands in `$(go env GOPATH)/bin/cockroachdb-mcp-server`.
+
+### Pre-built binaries
+
+Grab a tarball for `linux/{amd64,arm64}` or `windows/{amd64,arm64}` from
+[Releases](https://github.com/cockroachdb/cockroachdb-mcp-server/releases),
+available from the first release onwards.
+
+### Build from source
+
+```bash
+git clone https://github.com/cockroachdb/cockroachdb-mcp-server
+cd cockroachdb-mcp-server
 go build -o bin/cockroachdb-mcp-server .
 ./bin/cockroachdb-mcp-server --version
 ```
 
-> Pre-built binaries cover `linux/{amd64,arm64}` and `windows/{amd64,arm64}`. macOS users: use the Docker image (runs natively on Apple Silicon) or `go install github.com/cockroachdb/cockroachdb-mcp-server@latest`.
+macOS: use `go install` or build from source. Pre-built binaries do not cover
+darwin because a CockroachDB parser dependency needs cgo on macOS.
+
+## Setup - MCP client config
+
+Drop one of the following into your MCP client's config (Claude Desktop, Cursor,
+VS Code, Copilot CLI, etc.). Each client reads an `mcpServers` block or its own
+equivalent; see your client's docs for the file location.
+
+### stdio + cert-based auth (recommended)
+
+```json
+{
+  "mcpServers": {
+    "cockroachdb": {
+      "command": "cockroachdb-mcp-server",
+      "env": {
+        "CRDB_HOST": "my-cluster.crdb.io",
+        "CRDB_USERNAME": "ai_agent",
+        "CRDB_SSL_MODE": "verify-full",
+        "CRDB_SSL_CA_PATH": "/certs/ca.crt",
+        "CRDB_SSL_CERTFILE": "/certs/client.ai_agent.crt",
+        "CRDB_SSL_KEYFILE": "/certs/client.ai_agent.key"
+      }
+    }
+  }
+}
+```
+
+### stdio + full DSN
+
+```json
+{
+  "mcpServers": {
+    "cockroachdb": {
+      "command": "cockroachdb-mcp-server",
+      "env": {
+        "CRDB_DATABASE_URL": "postgresql://ai_agent@my-cluster.crdb.io:26257/defaultdb?sslmode=verify-full&sslcert=/certs/client.ai_agent.crt&sslkey=/certs/client.ai_agent.key&sslrootcert=/certs/ca.crt"
+      }
+    }
+  }
+}
+```
+
+### HTTPS (shared / remote deployments)
+
+Run the server as a long-lived process, then point your MCP client at the URL
+with the bearer token:
+
+```bash
+export CRDB_DATABASE_URL="postgresql://..."
+export CRDB_MCP_TRANSPORT=http
+export CRDB_MCP_HTTP_LISTEN_ADDR=0.0.0.0:8443
+export CRDB_MCP_BEARER_TOKEN="$(openssl rand -hex 32)"
+export CRDB_MCP_TLS_CERT=/etc/mcp/tls.crt
+export CRDB_MCP_TLS_KEY=/etc/mcp/tls.key
+cockroachdb-mcp-server
+```
+
+Set `CRDB_MCP_HTTP_LISTEN_ADDR` to whatever `host:port` fits your deployment,
+for example `127.0.0.1:9090` to serve only local traffic behind a
+TLS-terminating reverse proxy (with `CRDB_MCP_ALLOW_INSECURE_HTTP=true`), or
+`10.0.0.5:8443` to bind a specific interface.
+
+Then point your MCP client at the server:
+
+```json
+{
+  "mcpServers": {
+    "cockroachdb": {
+      "type": "http",
+      "url": "https://mcp.example.com:8443",
+      "headers": {
+        "Authorization": "Bearer <token>"
+      }
+    }
+  }
+}
+```
+
+> HTTP mode is TLS-by-default. Starting without `CRDB_MCP_TLS_CERT` and
+> `CRDB_MCP_TLS_KEY` is rejected unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true`
+> (for deployments behind a TLS-terminating reverse proxy). `/healthz` and
+> `/ready` are unauthenticated `GET`/`HEAD` probes; all other paths require the
+> bearer token.
 
 ## Configuration
 
-All configuration is via environment variables. `sslmode` must be `require`,
-`verify-ca`, or `verify-full` in both auth modes.
+All configuration is via environment variables.
 
-**Auth - choose one:**
+### Auth
 
-| Variable | Purpose |
-| --- | --- |
-| `CRDB_DATABASE_URL` | Full libpq connection string (preferred when set) |
+Cert-based auth is recommended in stdio mode. The server runs as a subprocess
+of the AI agent host, which can read `CRDB_PWD`, a password embedded in
+`CRDB_DATABASE_URL`, `PGPASSWORD`, or `~/.pgpass` from this process's
+environment. To protect those credentials, password-based auth is rejected by
+default. Set `CRDB_MCP_ALLOW_PASSWORD_AUTH=true` to opt in.
 
-Or the cert-based vars:
+`CRDB_DATABASE_URL` (a full libpq connection string) takes precedence over the
+split vars below. In both auth modes `sslmode` must be `require`, `verify-ca`,
+or `verify-full`; a `CRDB_DATABASE_URL` that omits `sslmode` or uses a weaker
+mode is rejected at startup.
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `CRDB_HOST` | Hostname | required |
 | `CRDB_PORT` | Port | `26257` |
 | `CRDB_USERNAME` | SQL user | required |
-| `CRDB_PWD` | Password (discouraged, see note below) | - |
+| `CRDB_PWD` | Password (discouraged, see note above) | - |
 | `CRDB_SSL_MODE` | `require`, `verify-ca`, or `verify-full` | `verify-full` |
 | `CRDB_SSL_CA_PATH` | CA cert path (required for `verify-ca` / `verify-full`) | - |
 | `CRDB_SSL_CERTFILE` | Client cert path | required |
 | `CRDB_SSL_KEYFILE` | Client key path | required |
 
-> **Cert-based auth is recommended in stdio mode.** The server runs as a
-> subprocess of the AI agent host, which can read `CRDB_PWD`, a password
-> embedded in `CRDB_DATABASE_URL`, `PGPASSWORD`, or `~/.pgpass` from this
-> process's environment. To protect those credentials, password-based auth is
-> rejected by default. Set `CRDB_MCP_ALLOW_PASSWORD_AUTH=true` to opt in.
-
-**Behavior:**
+### Query behavior
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `CRDB_MCP_QUERY_TIMEOUT` | Per-query timeout (Go duration, e.g. `30s`) | `30s` |
-| `CRDB_MCP_MAX_ROWS_COUNT` | Caps the max LIMIT a list-style tool will issue to CRDB. Must be a positive integer. | `10000` |
-| `CRDB_MCP_ENABLE_WRITE_QUERIES` | Gates the write tools (`create_database`, `create_table`, `insert_rows`) that land in a follow-up PR. `false` keeps the server read-only | `false` |
-| `CRDB_MCP_ALLOW_PASSWORD_AUTH` | Opt-in to password-based auth (rejected by default) | `false` |
-| `CRDB_MCP_MAX_CONNS` | Upper bound on the pgxpool connection count. Must be a positive integer ≤ 100. | `10` |
-| `CRDB_MCP_TXN_QOS` | Default transaction QoS for MCP sessions. One of `background`, `regular`, `critical`. | `background` |
-| `CRDB_MCP_TRANSPORT` | Transport to serve MCP on. `stdio` or `http` | `stdio` |
-| `CRDB_MCP_HTTP_LISTEN_ADDR` | Listen address when `CRDB_MCP_TRANSPORT=http` | `:8080` |
-| `CRDB_MCP_BEARER_TOKEN` | Bearer token clients must present in `Authorization: Bearer <token>`. Required when `CRDB_MCP_TRANSPORT=http` unless `CRDB_MCP_ALLOW_NO_BEARER=true`; must be at least 16 characters when set | - |
-| `CRDB_MCP_TLS_CERT` | PEM-encoded server certificate path. Required for HTTPS unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` | - |
-| `CRDB_MCP_TLS_KEY` | PEM-encoded private key path. Required for HTTPS unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` | - |
-| `CRDB_MCP_ALLOW_INSECURE_HTTP` | Explicit opt-in to run HTTP mode without TLS (cleartext). Intended for deployments behind a TLS-terminating reverse proxy | `false` |
-| `CRDB_MCP_ALLOW_NO_BEARER` | Explicit opt-in to run HTTP mode without bearer-token enforcement. Intended for deployments where auth is provided upstream (reverse proxy, gateway, mTLS, k8s NetworkPolicy). A startup warning is logged. | `false` |
-| `CRDB_MCP_LOG_LEVEL` | Log level for the structured JSON logger (see `CRDB_MCP_LOG_PATH`). One of `debug`, `info`, `warn`, `error` | `info` |
-| `CRDB_MCP_LOG_PATH` | Append logs to this file path. Use `-` for stderr. No rotation; use logrotate or your orchestrator. | - |
+| `CRDB_MCP_MAX_ROWS_COUNT` | Cap on the max LIMIT list-style tools issue to CRDB | `10000` |
+| `CRDB_MCP_MAX_CONNS` | Upper bound on the pgxpool connection count (≤ 100) | `10` |
+| `CRDB_MCP_TXN_QOS` | Default transaction QoS: `background`, `regular`, or `critical` | `background` |
+| `CRDB_MCP_ENABLE_WRITE_QUERIES` | Gate for the write tools (`create_database`, `create_table`, `insert_rows`) | `false` |
+| `CRDB_MCP_ALLOW_PASSWORD_AUTH` | Opt-in to password-based auth | `false` |
 
-The server sets `default_transaction_quality_of_service=background` on every
-session so MCP traffic does not contend with latency-sensitive foreground
-workloads. Precedence for picking the value:
+MCP traffic runs at `default_transaction_quality_of_service=background` by
+default so it does not contend with latency-sensitive foreground workloads.
+Precedence for picking the value:
 
 1. `CRDB_MCP_TXN_QOS` if set (`background`, `regular`, or `critical`).
 2. Otherwise, a `default_transaction_quality_of_service=...` query param in
    `CRDB_DATABASE_URL`, if present.
 3. Otherwise, `background`.
 
-## Run
+### Transport
 
-Default is stdio:
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `CRDB_MCP_TRANSPORT` | `stdio` or `http` | `stdio` |
+| `CRDB_MCP_HTTP_LISTEN_ADDR` | Listen address in HTTP mode, any `host:port`. Omit the host to bind all interfaces. Examples: `:8080`, `0.0.0.0:8443`, `127.0.0.1:9090` | `:8080` |
+| `CRDB_MCP_BEARER_TOKEN` | Bearer token clients must send in `Authorization: Bearer <token>`. Required in HTTP mode unless `CRDB_MCP_ALLOW_NO_BEARER=true`; must be at least 16 chars | - |
+| `CRDB_MCP_TLS_CERT` | PEM-encoded server cert path. Required for HTTPS unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` | - |
+| `CRDB_MCP_TLS_KEY` | PEM-encoded private key path. Required for HTTPS unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` | - |
+| `CRDB_MCP_ALLOW_INSECURE_HTTP` | Opt-in to cleartext HTTP (for reverse-proxy deployments) | `false` |
+| `CRDB_MCP_ALLOW_NO_BEARER` | Opt-in to skip bearer auth (for upstream-auth deployments). Startup warning logged | `false` |
 
-```bash
-export CRDB_DATABASE_URL="postgresql://user@host:26257/defaultdb?sslmode=verify-full&sslcert=/path/client.crt&sslkey=/path/client.key&sslrootcert=/path/ca.crt"
-./bin/cockroachdb-mcp-server
-```
+### Logging
 
-Or as an HTTPS service with bearer-token auth:
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `CRDB_MCP_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
+| `CRDB_MCP_LOG_PATH` | Log file path, or `-` for stderr. No rotation; use logrotate or your orchestrator | - |
 
-```bash
-export CRDB_DATABASE_URL="postgresql://..."
-export CRDB_MCP_TRANSPORT=http
-export CRDB_MCP_HTTP_LISTEN_ADDR=:8443
-export CRDB_MCP_BEARER_TOKEN="$(openssl rand -hex 32)"
-export CRDB_MCP_TLS_CERT=/etc/mcp/tls.crt
-export CRDB_MCP_TLS_KEY=/etc/mcp/tls.key
-./bin/cockroachdb-mcp-server
-```
+## Tools
 
-If you terminate TLS at a trusted reverse proxy, opt into cleartext HTTP explicitly:
+Grant the connecting SQL role only the privileges the registered tools need.
+Avoid admin and write privileges unless write tools are explicitly registered.
 
-```bash
-export CRDB_MCP_TRANSPORT=http
-export CRDB_MCP_BEARER_TOKEN="$(openssl rand -hex 32)"
-export CRDB_MCP_ALLOW_INSECURE_HTTP=true
-./bin/cockroachdb-mcp-server
-```
-
-> **HTTP mode is TLS-by-default.** Starting without `CRDB_MCP_TLS_CERT` and
-> `CRDB_MCP_TLS_KEY` is rejected unless `CRDB_MCP_ALLOW_INSECURE_HTTP=true` is
-> set, in which case a startup warning is logged. `/healthz` and `/ready` are
-> unauthenticated and `GET`/`HEAD`-only for orchestrator probes; all other
-> paths require the bearer token.
-
-### Tools shipped today
+### Read-only (registered by default)
 
 | Tool | Description |
 | --- | --- |
-| `list_databases` | List all databases in the CockroachDB cluster. Accepts optional `limit` (default 100, max 10000) and `offset`. |
+| `list_databases` | List all databases. Optional `limit` (default 100, max 10000) and `offset`. |
 | `list_tables` | List tables in a database. Required: `database`. Optional: `limit`, `offset`. |
-| `get_table_schema` | Return the `CREATE TABLE` statement for a table. Required: `database`, `table`. Optional: `schema` (defaults to `public`). |
-| `show_running_queries` | List currently executing CockroachDB cluster statements, ordered by start time descending. Optional `limit` (default 100, max 10000) and `offset`. |
-| `get_cluster` | Return CockroachDB cluster identity and version metadata: cluster_id, cluster_name, binary_version, active_version. |
-| `list_sql_users` | List SQL users defined in the CockroachDB cluster. Optional `limit` (default 100, max 10000) and `offset`. |
-| `list_cluster_nodes` | List CockroachDB cluster nodes with address, liveness, and locality. Requires admin or VIEWCLUSTERMETADATA on the connecting role. |
-| `select_query` | Execute a single agent-supplied SELECT (parser-validated). A default LIMIT of 100 is appended when none is supplied; the cap is `CRDB_MCP_MAX_ROWS_COUNT`. |
-| `explain_query` | Return the EXPLAIN plan for an agent-supplied SQL statement (parser-validated) without executing it. `EXPLAIN ANALYZE` (and `EXPLAIN ANALYZE (DEBUG)`) is rejected. `EXPLAIN` with display options (`VERBOSE`, `DISTSQL`, `TYPES`, `OPT`, etc.) is passed through. |
-| `show_statement` | Execute an agent-supplied SHOW statement (parser-validated) such as `SHOW SCHEMAS`, `SHOW INDEXES`, `SHOW REGIONS`. Optional `limit` (default 100, max 10000) and `offset`. |
-| `create_database` | Create a database. Required: `name`. Requires `CRDB_MCP_ENABLE_WRITE_QUERIES=true`. |
-| `create_table` | Execute a single `CREATE TABLE` statement (parser-validated). Required: `statement`. Requires `CRDB_MCP_ENABLE_WRITE_QUERIES=true`. |
-| `insert_rows` | Execute a single `INSERT` statement (parser-validated) and return rows affected. Required: `statement`. Requires `CRDB_MCP_ENABLE_WRITE_QUERIES=true`. |
+| `get_table_schema` | Return the `CREATE TABLE` for a table. Required: `database`, `table`. Optional: `schema` (default `public`). |
+| `get_cluster` | Cluster identity and version metadata: cluster_id, cluster_name, binary_version, active_version. |
+| `list_sql_users` | SQL users in the cluster. Optional: `limit`, `offset`. |
+| `list_cluster_nodes` | Cluster nodes with address, liveness, locality. Requires admin or `VIEWCLUSTERMETADATA`. |
+| `show_running_queries` | Currently executing statements, ordered by start time descending. Optional: `limit`, `offset`. |
+| `select_query` | Execute an agent-supplied SELECT (parser-validated). A default LIMIT of 100 is appended when none is supplied; cap is `CRDB_MCP_MAX_ROWS_COUNT`. |
+| `explain_query` | Return the EXPLAIN plan for an agent-supplied statement (parser-validated) without executing it. `EXPLAIN ANALYZE` (and `EXPLAIN ANALYZE (DEBUG)`) is rejected. Display options (`VERBOSE`, `DISTSQL`, `TYPES`, `OPT`, etc.) pass through. |
+| `show_statement` | Execute an agent-supplied SHOW statement (parser-validated) such as `SHOW SCHEMAS`, `SHOW INDEXES`, `SHOW REGIONS`. Optional: `limit`, `offset`. |
 
-Grant the connecting SQL role only the privileges the registered tools need. Avoid admin and write privileges unless write tools are explicitly registered.
+### Write (requires `CRDB_MCP_ENABLE_WRITE_QUERIES=true`)
 
-Additional read and write tools land in follow-up PRs.
+| Tool | Description |
+| --- | --- |
+| `create_database` | Create a database. Required: `name`. |
+| `create_table` | Execute a single `CREATE TABLE` (parser-validated). Required: `statement`. |
+| `insert_rows` | Execute a single `INSERT` (parser-validated); returns rows affected. Required: `statement`. |
 
-## Test
+## Testing
 
 ```bash
 go test ./...
 ```
 
-### With MCP Inspector
+Interactive inspection via [MCP Inspector](https://github.com/modelcontextprotocol/inspector):
 
 ```bash
 npm install -g @modelcontextprotocol/inspector
-mcp-inspector ./bin/cockroachdb-mcp-server
+mcp-inspector cockroachdb-mcp-server
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Security
+
+Report vulnerabilities via [SECURITY.md](SECURITY.md).
 
 ## License
 
-[Apache License 2.0](LICENSE)
+[Apache License 2.0](LICENSE).
