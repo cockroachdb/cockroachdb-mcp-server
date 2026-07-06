@@ -198,9 +198,10 @@ Precedence for picking the value:
 ### Tracing (OpenTelemetry)
 
 Tracing is opt-in: with neither variable below set, no exporter is installed.
-When enabled, tool calls and their SQL statements are exported as spans, and
-server logs as OTel log records. Query text and errors are redacted before
-export so literals and user data never leave the server.
+When enabled, tool calls and their SQL statements are exported as spans,
+tool-call latency as a histogram metric (`mcp.tool.call.duration`), and server
+logs as OTel log records. Query text and errors are redacted before export so
+literals and user data never leave the server.
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
