@@ -50,6 +50,26 @@ func TestSetup(t *testing.T) {
 		require.Equal(t, "unit-span", span0["Name"])
 	})
 
+	t.Run("file exporter writes metrics as JSON", func(t *testing.T) {
+		ctx := context.Background()
+		path := filepath.Join(t.TempDir(), "otel.jsonl")
+		cfg := &config.Config{OTelFile: path}
+
+		shutdown, err := Setup(ctx, cfg, "test-service", "v1.2.3")
+		require.NoError(t, err)
+
+		hist, err := otelapi.Meter("test").Float64Histogram("unit-histogram")
+		require.NoError(t, err)
+		hist.Record(ctx, 0.42)
+
+		require.NoError(t, shutdown(ctx))
+
+		raw, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Contains(t, string(raw), "unit-histogram",
+			"expected exporter to write the recorded metric")
+	})
+
 	t.Run("missing parent dir surfaces a wrapped error", func(t *testing.T) {
 		ctx := context.Background()
 		cfg := &config.Config{OTelFile: "/nonexistent/dir/otel.jsonl"}

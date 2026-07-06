@@ -103,7 +103,8 @@ func run() error {
 		Name:    serverName,
 		Version: serverVersion,
 	}, nil)
-	server.AddReceivingMiddleware(middleware.ToolCallSpan, middleware.ToolCallLogger)
+	server.AddReceivingMiddleware(
+		middleware.ToolCallSpan, middleware.ToolCallMetrics, middleware.ToolCallLogger)
 	tools.NewToolHandlers(dm, cfg).RegisterTools(server)
 
 	zap.L().Info("starting server",
