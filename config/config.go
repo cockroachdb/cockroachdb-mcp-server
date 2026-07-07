@@ -34,6 +34,7 @@ const (
 	envTLSKey             = "CRDB_MCP_TLS_KEY"
 	envAllowInsecureHTTP  = "CRDB_MCP_ALLOW_INSECURE_HTTP"
 	envAllowNoBearer      = "CRDB_MCP_ALLOW_NO_BEARER"
+	envAllowInsecureDB    = "CRDB_MCP_ALLOW_INSECURE_DB"
 	envMaxConns           = "CRDB_MCP_MAX_CONNS"
 	envTxnQoS             = "CRDB_MCP_TXN_QOS"
 	envLogLevel           = "CRDB_MCP_LOG_LEVEL"
@@ -93,8 +94,11 @@ type Config struct {
 	// AllowNoBearer lets HTTP mode start without a bearer token. Auth must
 	// then be provided upstream (reverse proxy, gateway, mTLS).
 	AllowNoBearer bool
-	OTelFile      string
-	OTLPEndpoint  string
+	// AllowInsecureDB permits the sslmode values that can run without
+	// TLS (disable, allow, prefer). Local development only.
+	AllowInsecureDB bool
+	OTelFile        string
+	OTLPEndpoint    string
 }
 
 // Load reads configuration from environment variables.
@@ -138,6 +142,13 @@ func Load() (*Config, error) {
 			return nil, errors.Wrapf(err, "%s must be a boolean", envAllowNoBearer)
 		}
 		cfg.AllowNoBearer = v
+	}
+	if raw := os.Getenv(envAllowInsecureDB); raw != "" {
+		v, err := strconv.ParseBool(raw)
+		if err != nil {
+			return nil, errors.Wrapf(err, "%s must be a boolean", envAllowInsecureDB)
+		}
+		cfg.AllowInsecureDB = v
 	}
 	switch cfg.Transport {
 	case TransportStdio:
@@ -232,7 +243,7 @@ func Load() (*Config, error) {
 	}
 
 	if cfg.DatabaseURL != "" {
-		if err := validateDatabaseURL(cfg.DatabaseURL); err != nil {
+		if err := validateDatabaseURL(cfg); err != nil {
 			return nil, err
 		}
 		return cfg, nil
@@ -266,8 +277,12 @@ func (c *Config) DSN() string {
 	}
 	q := url.Values{}
 	q.Set("sslmode", c.SSLMode)
-	q.Set("sslcert", c.CertFile)
-	q.Set("sslkey", c.KeyFile)
+	if c.CertFile != "" {
+		q.Set("sslcert", c.CertFile)
+	}
+	if c.KeyFile != "" {
+		q.Set("sslkey", c.KeyFile)
+	}
 	if c.CAPath != "" {
 		q.Set("sslrootcert", c.CAPath)
 	}
@@ -285,8 +300,8 @@ func (c *Config) DSN() string {
 	return u.String()
 }
 
-func validateDatabaseURL(raw string) error {
-	u, err := url.Parse(raw)
+func validateDatabaseURL(cfg *Config) error {
+	u, err := url.Parse(cfg.DatabaseURL)
 	if err != nil {
 		return errors.Wrapf(err, "%s is not a valid URL", envDatabaseURL)
 	}
@@ -294,10 +309,11 @@ func validateDatabaseURL(raw string) error {
 	if mode == "" {
 		return errors.Newf("%s must include sslmode (require, verify-ca, or verify-full)", envDatabaseURL)
 	}
-	if !allowedSSLMode(mode) {
-		return errors.Newf("%s sslmode=%q is not allowed; use require, verify-ca, or verify-full",
-			envDatabaseURL, mode)
+	if !allowedSSLMode(mode, cfg.AllowInsecureDB) {
+		return errors.Newf("%s sslmode=%q is not allowed; use require, verify-ca, or verify-full, or set %s=true for disable, allow, or prefer",
+			envDatabaseURL, mode, envAllowInsecureDB)
 	}
+	cfg.SSLMode = mode
 	return nil
 }
 
@@ -313,9 +329,9 @@ func loadCertConfig(cfg *Config) (*Config, error) {
 	if cfg.SSLMode == "" {
 		cfg.SSLMode = defaultSSLMode
 	}
-	if !allowedSSLMode(cfg.SSLMode) {
-		return nil, errors.Newf("%s=%q is not allowed; use require, verify-ca, or verify-full",
-			envSSLMode, cfg.SSLMode)
+	if !allowedSSLMode(cfg.SSLMode, cfg.AllowInsecureDB) {
+		return nil, errors.Newf("%s=%q is not allowed; use require, verify-ca, or verify-full, or set %s=true for disable, allow, or prefer",
+			envSSLMode, cfg.SSLMode, envAllowInsecureDB)
 	}
 	var missing []string
 	if cfg.Host == "" {
@@ -324,11 +340,14 @@ func loadCertConfig(cfg *Config) (*Config, error) {
 	if cfg.User == "" {
 		missing = append(missing, envUser)
 	}
-	if cfg.CertFile == "" {
-		missing = append(missing, envCertFile)
-	}
-	if cfg.KeyFile == "" {
-		missing = append(missing, envKeyFile)
+	// Client certs are mandatory only when TLS is guaranteed.
+	if !insecureCapableSSLMode(cfg.SSLMode) {
+		if cfg.CertFile == "" {
+			missing = append(missing, envCertFile)
+		}
+		if cfg.KeyFile == "" {
+			missing = append(missing, envKeyFile)
+		}
 	}
 	if cfg.SSLMode == "verify-ca" || cfg.SSLMode == "verify-full" {
 		if cfg.CAPath == "" {
@@ -365,6 +384,11 @@ func (c *Config) OTelEnabled() bool {
 	return c.OTelFile != "" || c.OTLPEndpoint != ""
 }
 
+// InsecureDB reports whether the database connection can run without TLS.
+func (c *Config) InsecureDB() bool {
+	return insecureCapableSSLMode(c.SSLMode)
+}
+
 // validateHTTPTLS enforces the SECSERV-422 default-secure policy: HTTP mode
 // must serve TLS unless the operator explicitly opts into cleartext via
 // CRDB_MCP_ALLOW_INSECURE_HTTP=true. Cert and key are required together, and
@@ -398,9 +422,23 @@ func validateHTTPTLS(cfg *Config) error {
 	return nil
 }
 
-func allowedSSLMode(mode string) bool {
+// allowedSSLMode gates the cleartext-capable modes behind the
+// CRDB_MCP_ALLOW_INSECURE_DB opt-in.
+func allowedSSLMode(mode string, allowInsecure bool) bool {
 	switch mode {
 	case "require", "verify-ca", "verify-full":
+		return true
+	case "disable", "allow", "prefer":
+		return allowInsecure
+	}
+	return false
+}
+
+// insecureCapableSSLMode reports whether mode can yield a cleartext
+// connection: always for disable, server-negotiated for allow and prefer.
+func insecureCapableSSLMode(mode string) bool {
+	switch mode {
+	case "disable", "allow", "prefer":
 		return true
 	}
 	return false
