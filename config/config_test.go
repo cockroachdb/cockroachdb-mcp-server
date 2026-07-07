@@ -37,6 +37,27 @@ func TestLoad(t *testing.T) {
 		require.Empty(t, cfg.TxnQoS, "txn qos is empty unless env var is explicit; adapter applies the fallback")
 		require.Equal(t, defaultLogLevel, cfg.LogLevel)
 		require.Empty(t, cfg.LogPath, "log path defaults to empty (stderr)")
+		require.Empty(t, cfg.OTelFile, "otel file is opt-in")
+		require.Empty(t, cfg.OTLPEndpoint, "otlp endpoint is opt-in")
+		require.False(t, cfg.OTelEnabled(), "OTel is off when neither env var is set")
+	})
+
+	t.Run("otel file path is captured", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envOTelFile: "/var/log/otel.jsonl"})
+		setEnv(t, env)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, "/var/log/otel.jsonl", cfg.OTelFile)
+		require.True(t, cfg.OTelEnabled())
+	})
+
+	t.Run("otlp endpoint is captured", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envOTLPEndpoint: "otel-collector:4317"})
+		setEnv(t, env)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.Equal(t, "otel-collector:4317", cfg.OTLPEndpoint)
+		require.True(t, cfg.OTelEnabled())
 	})
 
 	t.Run("log path is captured and validated as writable", func(t *testing.T) {
@@ -411,7 +432,7 @@ func clearEnv(t *testing.T) {
 		envCAPath, envCertFile, envKeyFile, envEnableWriteQueries, envQueryTimeout,
 		envMaxRowsCount, envTransport, envHTTPListenAddr, envBearerToken,
 		envTLSCert, envTLSKey, envAllowInsecureHTTP, envAllowPasswordAuth,
-		envLogLevel, envLogPath,
+		envLogLevel, envLogPath, envOTelFile, envOTLPEndpoint,
 	} {
 		t.Setenv(k, "")
 	}

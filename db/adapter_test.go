@@ -120,6 +120,63 @@ func TestBuildPoolConfig(t *testing.T) {
 	})
 }
 
+func TestRedactSQL(t *testing.T) {
+	cases := []struct {
+		name, sql, want string
+	}{
+		{
+			"SELECT hides literals and identifiers",
+			"SELECT * FROM system.descriptor WHERE id = 1",
+			"SELECT * FROM _._ WHERE _ = _",
+		},
+		{
+			"literal PII in WHERE is scrubbed",
+			"SELECT email FROM users WHERE email = 'alice@example.com'",
+			"SELECT _ FROM _ WHERE _ = '_'",
+		},
+		{
+			"INSERT VALUES payload is scrubbed",
+			"INSERT INTO mcp_smoke.trace_notes (id, body) VALUES (1, 'reconnect ok')",
+			"INSERT INTO _._(_, _) VALUES (_, '_')",
+		},
+		{
+			"CREATE TABLE hides names but preserves types",
+			"CREATE TABLE t (id INT PRIMARY KEY, name STRING)",
+			"CREATE TABLE _ (_ INT8 PRIMARY KEY, _ STRING)",
+		},
+		{
+			"unparseable SQL returns fallback without leaking source",
+			"not sql at all",
+			redactedSQLFallback,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, redactSQL(tc.sql))
+		})
+	}
+}
+
+func TestSQLOperation(t *testing.T) {
+	cases := []struct {
+		name, sql, want string
+	}{
+		{"select lowercased", "select 1", "SELECT"},
+		{"select uppercased", "SELECT 1", "SELECT"},
+		{"leading whitespace", "  \n\tSELECT 1", "SELECT"},
+		{"multiword DML", "INSERT INTO t VALUES (1)", "INSERT"},
+		{"comment-prefixed SQL falls back to empty so span name becomes sql.statement", "-- hello\nSELECT 1", ""},
+		{"block-comment-prefixed SQL falls back to empty", "/* c */ SELECT 1", ""},
+		{"empty string", "", ""},
+		{"whitespace only", "   \n\t", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, sqlOperation(tc.sql))
+		})
+	}
+}
+
 // clearPGEnv unsets libpq fallback env vars so a developer's shell
 // (e.g. an exported PGPASSWORD) cannot leak into the test connection
 // and mask or flip the password-auth assertions.
