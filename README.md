@@ -51,6 +51,10 @@ Drop one of the following into your MCP client's config (Claude Desktop, Cursor,
 VS Code, Copilot CLI, etc.). Each client reads an `mcpServers` block or its own
 equivalent; see your client's docs for the file location.
 
+> GUI clients (e.g. Claude Desktop) often launch with a minimal PATH and do
+> not expand `~`, so a bare `command` may not resolve; use the absolute
+> binary path instead, e.g. `/Users/<username>/go/bin/cockroachdb-mcp-server`.
+
 ### stdio + cert-based auth (recommended)
 
 ```json
@@ -71,7 +75,7 @@ equivalent; see your client's docs for the file location.
 }
 ```
 
-### stdio + full DSN
+### stdio + full connection string
 
 ```json
 {
@@ -80,6 +84,26 @@ equivalent; see your client's docs for the file location.
       "command": "cockroachdb-mcp-server",
       "env": {
         "CRDB_DATABASE_URL": "postgresql://ai_agent@my-cluster.crdb.io:26257/defaultdb?sslmode=verify-full&sslcert=/certs/client.ai_agent.crt&sslkey=/certs/client.ai_agent.key&sslrootcert=/certs/ca.crt"
+      }
+    }
+  }
+}
+```
+
+### stdio + local insecure cluster (development only, writes enabled)
+
+For a local `cockroach start-single-node --insecure` or `cockroach demo --insecure`
+cluster, opt in to a TLS-free connection; no cert files are needed:
+
+```json
+{
+  "mcpServers": {
+    "cockroachdb": {
+      "command": "cockroachdb-mcp-server",
+      "env": {
+        "CRDB_DATABASE_URL": "postgresql://root@localhost:26257/defaultdb?sslmode=disable",
+        "CRDB_MCP_ALLOW_INSECURE_DB": "true",
+        "CRDB_MCP_ENABLE_WRITE_QUERIES": "true"
       }
     }
   }
@@ -142,8 +166,9 @@ default. Set `CRDB_MCP_ALLOW_PASSWORD_AUTH=true` to opt in.
 
 `CRDB_DATABASE_URL` (a full libpq connection string) takes precedence over the
 split vars below. In both auth modes `sslmode` must be `require`, `verify-ca`,
-or `verify-full`; a `CRDB_DATABASE_URL` that omits `sslmode` or uses a weaker
-mode is rejected at startup.
+or `verify-full`; a `CRDB_DATABASE_URL` that omits `sslmode` is rejected at
+startup, and the TLS-optional modes (`disable`, `allow`, `prefer`) require
+`CRDB_MCP_ALLOW_INSECURE_DB=true`.
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
@@ -151,7 +176,7 @@ mode is rejected at startup.
 | `CRDB_PORT` | Port | `26257` |
 | `CRDB_USERNAME` | SQL user | required |
 | `CRDB_PWD` | Password (discouraged, see note above) | - |
-| `CRDB_SSL_MODE` | `require`, `verify-ca`, or `verify-full` | `verify-full` |
+| `CRDB_SSL_MODE` | `require`, `verify-ca`, or `verify-full`; `disable`, `allow`, `prefer` with `CRDB_MCP_ALLOW_INSECURE_DB=true` | `verify-full` |
 | `CRDB_SSL_CA_PATH` | CA cert path (required for `verify-ca` / `verify-full`) | - |
 | `CRDB_SSL_CERTFILE` | Client cert path | required |
 | `CRDB_SSL_KEYFILE` | Client key path | required |
@@ -166,6 +191,7 @@ mode is rejected at startup.
 | `CRDB_MCP_TXN_QOS` | Default transaction QoS: `background`, `regular`, or `critical` | `background` |
 | `CRDB_MCP_ENABLE_WRITE_QUERIES` | Gate for the write tools (`create_database`, `create_table`, `insert_rows`) | `false` |
 | `CRDB_MCP_ALLOW_PASSWORD_AUTH` | Opt-in to password-based auth | `false` |
+| `CRDB_MCP_ALLOW_INSECURE_DB` | Opt-in to the sslmode values that can run without TLS: `disable`, `allow`, `prefer`. Cert env vars are not required in these modes. Development only | `false` |
 
 MCP traffic runs at `default_transaction_quality_of_service=background` by
 default so it does not contend with latency-sensitive foreground workloads.

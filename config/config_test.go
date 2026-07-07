@@ -129,6 +129,78 @@ func TestLoad(t *testing.T) {
 		setEnv(t, env)
 		_, err := Load()
 		require.Error(t, err, "expected error for sslmode=disable")
+		require.Contains(t, err.Error(), envAllowInsecureDB, "error should mention the insecure opt-in")
+	})
+
+	t.Run("insecure db opt-in allows sslmode=disable without certs", func(t *testing.T) {
+		setEnv(t, map[string]string{
+			envHost:            "localhost",
+			envUser:            "root",
+			envSSLMode:         "disable",
+			envAllowInsecureDB: "true",
+		})
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.True(t, cfg.InsecureDB())
+		dsn := cfg.DSN()
+		require.Contains(t, dsn, "sslmode=disable")
+		require.NotContains(t, dsn, "sslcert", "DSN should omit client cert params without TLS")
+		require.NotContains(t, dsn, "sslkey", "DSN should omit client key params without TLS")
+	})
+
+	t.Run("database url with sslmode=disable requires the opt-in", func(t *testing.T) {
+		setEnv(t, map[string]string{
+			envDatabaseURL: "postgresql://root@localhost:26257/defaultdb?sslmode=disable",
+		})
+		_, err := Load()
+		require.Error(t, err, "expected error for sslmode=disable without opt-in")
+		require.Contains(t, err.Error(), envAllowInsecureDB)
+	})
+
+	t.Run("database url with sslmode=disable and opt-in is accepted", func(t *testing.T) {
+		setEnv(t, map[string]string{
+			envDatabaseURL:     "postgresql://root@localhost:26257/defaultdb?sslmode=disable",
+			envAllowInsecureDB: "true",
+		})
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.True(t, cfg.InsecureDB())
+	})
+
+	t.Run("negotiated ssl modes are gated behind the same opt-in", func(t *testing.T) {
+		for _, mode := range []string{"allow", "prefer"} {
+			setEnv(t, map[string]string{
+				envHost:    "localhost",
+				envUser:    "root",
+				envSSLMode: mode,
+			})
+			_, err := Load()
+			require.Errorf(t, err, "sslmode=%s should be rejected without opt-in", mode)
+
+			setEnv(t, map[string]string{
+				envHost:            "localhost",
+				envUser:            "root",
+				envSSLMode:         mode,
+				envAllowInsecureDB: "true",
+			})
+			cfg, err := Load()
+			require.NoErrorf(t, err, "sslmode=%s should be accepted with opt-in", mode)
+			require.True(t, cfg.InsecureDB(), "negotiated modes are insecure-capable")
+		}
+	})
+
+	t.Run("secure ssl modes report InsecureDB false", func(t *testing.T) {
+		setEnv(t, baseEnv)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.False(t, cfg.InsecureDB())
+	})
+
+	t.Run("invalid insecure db opt-in bool is rejected", func(t *testing.T) {
+		env := mergeEnv(baseEnv, map[string]string{envAllowInsecureDB: "not-a-bool"})
+		setEnv(t, env)
+		_, err := Load()
+		require.Error(t, err, "expected error for invalid bool")
 	})
 
 	t.Run("missing required env vars produce a single error", func(t *testing.T) {
@@ -432,6 +504,7 @@ func clearEnv(t *testing.T) {
 		envCAPath, envCertFile, envKeyFile, envEnableWriteQueries, envQueryTimeout,
 		envMaxRowsCount, envTransport, envHTTPListenAddr, envBearerToken,
 		envTLSCert, envTLSKey, envAllowInsecureHTTP, envAllowPasswordAuth,
+		envAllowNoBearer, envAllowInsecureDB, envMaxConns, envTxnQoS,
 		envLogLevel, envLogPath, envOTelFile, envOTLPEndpoint,
 	} {
 		t.Setenv(k, "")

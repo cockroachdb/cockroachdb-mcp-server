@@ -93,6 +93,12 @@ func run() error {
 		zap.ReplaceGlobals(mcpotel.AttachZapBridge(logger, serverName))
 	}
 
+	if cfg.InsecureDB() {
+		zap.L().Warn("database connection may run without TLS; use only for local development",
+			zap.String("name", serverName),
+			zap.String("sslmode", cfg.SSLMode),
+			zap.String("opt_in_env", "CRDB_MCP_ALLOW_INSECURE_DB"))
+	}
 	dm, err := db.NewManager(ctx, cfg)
 	if err != nil {
 		return errors.Wrap(err, "initialize database manager")
