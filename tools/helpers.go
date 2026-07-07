@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
@@ -119,6 +120,45 @@ func walkTableExprReadOnly(expr tree.TableExpr) error {
 	return nil
 }
 
+// ensureNoHiddenDML rejects DML hidden inside a mutation statement's CTEs
+// (WITH d AS (DELETE ...) UPDATE ...), joined table expressions (UPDATE ...
+// FROM, DELETE ... USING), or expression subqueries (SET/WHERE).
+func ensureNoHiddenDML(stmt tree.Statement) error {
+	var with *tree.With
+	var tables tree.TableExprs
+	switch s := stmt.(type) {
+	case *tree.Update:
+		with, tables = s.With, s.From
+	case *tree.Delete:
+		with, tables = s.With, s.Using
+	}
+	if with != nil {
+		for _, cte := range with.CTEList {
+			if _, err := ensureSelectOnly(cte.Stmt); err != nil {
+				return errors.Wrap(err, "CTE contains a non-SELECT statement")
+			}
+		}
+	}
+	for _, te := range tables {
+		if err := walkTableExprReadOnly(te); err != nil {
+			return err
+		}
+	}
+	_, err := tree.SimpleStmtVisit(stmt, func(e tree.Expr) (bool, tree.Expr, error) {
+		sub, ok := e.(*tree.Subquery)
+		if !ok {
+			return true, e, nil
+		}
+		if ps, ok := sub.Select.(*tree.ParenSelect); ok {
+			if _, err := ensureSelectOnly(ps.Select); err != nil {
+				return false, e, err
+			}
+		}
+		return true, e, nil
+	})
+	return err
+}
+
 // validateLimitClause rejects a SELECT LIMIT clause that is negative, uses
 // LIMIT ALL, is not a numeric literal, or exceeds maxLimit.
 func validateLimitClause(limit *tree.Limit, maxLimit int64) error {
@@ -160,6 +200,59 @@ func validateShowStatement(stmt tree.Statement) error {
 // MCPQueryResult is the response shape returned by read tools.
 type MCPQueryResult struct {
 	Rows []json.RawMessage `json:"rows"`
+}
+
+// runMutation executes a validated INSERT/UPDATE/DELETE and renders its result.
+// A RETURNING statement runs through Query so its rows reach the caller; Exec,
+// used otherwise, reports only the affected-row count and drops any rows.
+func (h *ToolHandlers) runMutation(
+	ctx context.Context, stmt tree.Statement, errCtx string,
+) (*mcp.CallToolResult, any, error) {
+	var table tree.TableExpr
+	var returning tree.ReturningClause
+	switch s := stmt.(type) {
+	case *tree.Insert:
+		table, returning = s.Table, s.Returning
+	case *tree.Update:
+		table, returning = s.Table, s.Returning
+	case *tree.Delete:
+		table, returning = s.Table, s.Returning
+	}
+
+	tableName := tree.AsString(table)
+	if tree.HasReturningClause(returning) {
+		res, err := h.dm.Query(ctx, stmt.String())
+		if err != nil {
+			return nil, nil, errors.Wrap(err, errCtx)
+		}
+		return mutationOK(tableName, int64(len(res.Rows)), res)
+	}
+	rows, err := h.dm.Exec(ctx, stmt.String())
+	if err != nil {
+		return nil, nil, errors.Wrap(err, errCtx)
+	}
+	return mutationOK(tableName, rows, nil)
+}
+
+// mutationOK renders a DML tool's result as an MCP response; qr carries the
+// RETURNING rows when the statement ran through Query, nil otherwise.
+func mutationOK(table string, rowsAffected int64, qr *db.QueryResult) (*mcp.CallToolResult, any, error) {
+	payload := map[string]any{
+		"table":         table,
+		"rows_affected": rowsAffected,
+	}
+	if qr != nil {
+		rows := make([]map[string]any, 0, len(qr.Rows))
+		for _, r := range qr.Rows {
+			m := make(map[string]any, len(qr.Columns))
+			for i, col := range qr.Columns {
+				m[col] = r[i]
+			}
+			rows = append(rows, m)
+		}
+		payload["rows"] = rows
+	}
+	return writeOK(payload)
 }
 
 // writeOK renders a write-tool success payload as an MCP tool response.
