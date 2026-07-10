@@ -99,5 +99,18 @@ func (h *ToolHandlers) RegisterTools(server *mcp.Server) {
 			Name:        "insert_rows",
 			Description: "Execute a single INSERT statement. Returns the number of rows affected.",
 		}, h.insertRows)
+
+		destructive := true
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "update_rows",
+			Description: "Execute a single UPDATE statement with a mandatory WHERE clause. Returns the number of rows affected.",
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive},
+		}, h.updateRows)
+
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "delete_rows",
+			Description: "Execute a single DELETE statement with a mandatory WHERE clause. Returns the number of rows affected.",
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, IdempotentHint: true},
+		}, h.deleteRows)
 	}
 }

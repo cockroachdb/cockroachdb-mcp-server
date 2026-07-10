@@ -47,7 +47,7 @@ type ExplainQueryParams struct {
 
 // ShowStatementParams contains parameters for the show_statement tool.
 type ShowStatementParams struct {
-	Query string `json:"query" jsonschema:"A single SHOW statement (e.g. SHOW SCHEMAS, SHOW INDEXES, SHOW REGIONS). A default LIMIT is appended, capped at CRDB_MCP_MAX_ROWS_COUNT."`
+	Query string `json:"query" jsonschema:"A single SHOW statement (e.g. SHOW SCHEMAS, SHOW INDEXES, SHOW REGIONS, SHOW JOBS). A default LIMIT is appended, capped at CRDB_MCP_MAX_ROWS_COUNT."`
 	PaginationParams
 }
 
@@ -64,5 +64,15 @@ type CreateTableParams struct {
 
 // InsertRowsParams contains parameters for the insert_rows tool.
 type InsertRowsParams struct {
-	Statement string `json:"statement" jsonschema:"A single INSERT statement. RETURNING clauses are rejected; use select_query to read back rows. Qualify the table with a database when not using the connection's default database."`
+	Statement string `json:"statement" jsonschema:"A single INSERT statement. A RETURNING clause returns the inserted rows. Qualify the table with a database when not using the connection's default database."`
+}
+
+// UpdateRowsParams contains parameters for the update_rows tool.
+type UpdateRowsParams struct {
+	Statement string `json:"statement" jsonschema:"A single UPDATE statement. A WHERE clause is mandatory. A RETURNING clause returns the updated rows. Qualify the table with a database when not using the connection's default database."`
+}
+
+// DeleteRowsParams contains parameters for the delete_rows tool.
+type DeleteRowsParams struct {
+	Statement string `json:"statement" jsonschema:"A single DELETE statement. A WHERE clause is mandatory. A RETURNING clause returns the deleted rows. Qualify the table with a database when not using the connection's default database."`
 }

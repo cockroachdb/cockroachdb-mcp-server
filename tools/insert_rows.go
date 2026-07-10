@@ -20,10 +20,6 @@ func (h *ToolHandlers) insertRows(
 	if !ok {
 		return nil, nil, errors.Newf("expected an INSERT statement, got %s", stmt.StatementTag())
 	}
-	// pgxpool.Exec drops RETURNING rows; reject so the agent uses select_query.
-	if tree.HasReturningClause(ins.Returning) {
-		return nil, nil, errors.New("INSERT ... RETURNING is not supported; use select_query for reads")
-	}
 	// Block DML hidden inside statement-level CTEs (WITH d AS (DELETE ...) INSERT ...).
 	if ins.With != nil {
 		for _, cte := range ins.With.CTEList {
@@ -40,12 +36,5 @@ func (h *ToolHandlers) insertRows(
 		}
 	}
 
-	rows, err := h.dm.Exec(ctx, stmt.String())
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "insert rows")
-	}
-	return writeOK(map[string]any{
-		"table":         tree.AsString(ins.Table),
-		"rows_affected": rows,
-	})
+	return h.runMutation(ctx, stmt, "insert rows")
 }

@@ -20,6 +20,12 @@ func newWriteHandlers(dm DBManager) *ToolHandlers {
 	return NewToolHandlers(dm, &config.Config{MaxRowsCount: 10000, EnableWriteQueries: true})
 }
 
+// rejectionCase is a table entry asserting a write tool rejects a statement
+// before it reaches the database.
+type rejectionCase struct {
+	name, statement, wantContains string
+}
+
 func textOf(t *testing.T, res *mcp.CallToolResult) string {
 	t.Helper()
 	require.NotNil(t, res, "nil call tool result")

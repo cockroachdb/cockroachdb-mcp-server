@@ -156,7 +156,7 @@ Then point your MCP client at the server:
 
 All configuration is via environment variables.
 
-### Auth
+### Authentication
 
 Cert-based auth is recommended in stdio mode. The server runs as a subprocess
 of the AI agent host, which can read `CRDB_PWD`, a password embedded in
@@ -189,7 +189,7 @@ startup, and the TLS-optional modes (`disable`, `allow`, `prefer`) require
 | `CRDB_MCP_MAX_ROWS_COUNT` | Cap on the max LIMIT list-style tools issue to CRDB | `10000` |
 | `CRDB_MCP_MAX_CONNS` | Upper bound on the pgxpool connection count (≤ 100) | `10` |
 | `CRDB_MCP_TXN_QOS` | Default transaction QoS: `background`, `regular`, or `critical` | `background` |
-| `CRDB_MCP_ENABLE_WRITE_QUERIES` | Gate for the write tools (`create_database`, `create_table`, `insert_rows`) | `false` |
+| `CRDB_MCP_ENABLE_WRITE_QUERIES` | Gate for the write tools (`create_database`, `create_table`, `insert_rows`, `update_rows`, `delete_rows`) | `false` |
 | `CRDB_MCP_ALLOW_PASSWORD_AUTH` | Opt-in to password-based auth | `false` |
 | `CRDB_MCP_ALLOW_INSECURE_DB` | Opt-in to the sslmode values that can run without TLS: `disable`, `allow`, `prefer`. Cert env vars are not required in these modes. Development only | `false` |
 
@@ -251,6 +251,11 @@ the server's environment:
 Grant the connecting SQL role only the privileges the registered tools need.
 Avoid admin and write privileges unless write tools are explicitly registered.
 
+`CRDB_MCP_ENABLE_WRITE_QUERIES` enables all write tools together. For
+per-operation control, grant the connecting role only the SQL privileges you
+want, for example `SELECT`, `INSERT`, and `UPDATE` but not `DELETE` to allow
+writes without deletes.
+
 ### Read-only (registered by default)
 
 | Tool | Description |
@@ -262,17 +267,21 @@ Avoid admin and write privileges unless write tools are explicitly registered.
 | `list_sql_users` | SQL users in the cluster. Optional: `limit`, `offset`. |
 | `list_cluster_nodes` | Cluster nodes with address, liveness, locality. Requires admin or `VIEWCLUSTERMETADATA`. |
 | `show_running_queries` | Currently executing statements, ordered by start time descending. Optional: `limit`, `offset`. |
-| `select_query` | Execute an agent-supplied SELECT (parser-validated). A default LIMIT of 100 is appended when none is supplied; cap is `CRDB_MCP_MAX_ROWS_COUNT`. |
-| `explain_query` | Return the EXPLAIN plan for an agent-supplied statement (parser-validated) without executing it. `EXPLAIN ANALYZE` (and `EXPLAIN ANALYZE (DEBUG)`) is rejected. Display options (`VERBOSE`, `DISTSQL`, `TYPES`, `OPT`, etc.) pass through. |
-| `show_statement` | Execute an agent-supplied SHOW statement (parser-validated) such as `SHOW SCHEMAS`, `SHOW INDEXES`, `SHOW REGIONS`. Optional: `limit`, `offset`. |
+| `select_query` | Execute a SELECT statement. A default LIMIT of 100 is appended when none is supplied; cap is `CRDB_MCP_MAX_ROWS_COUNT`. |
+| `explain_query` | Return the EXPLAIN plan for a statement without executing it. `EXPLAIN ANALYZE` (and `EXPLAIN ANALYZE (DEBUG)`) is rejected. Display options (`VERBOSE`, `DISTSQL`, `TYPES`, `OPT`, etc.) pass through. |
+| `show_statement` | Execute a SHOW statement such as `SHOW SCHEMAS`, `SHOW INDEXES`, `SHOW REGIONS`, `SHOW JOBS`. Optional: `limit`, `offset`. |
 
 ### Write (requires `CRDB_MCP_ENABLE_WRITE_QUERIES=true`)
 
 | Tool | Description |
 | --- | --- |
 | `create_database` | Create a database. Required: `name`. |
-| `create_table` | Execute a single `CREATE TABLE` (parser-validated). Required: `statement`. |
-| `insert_rows` | Execute a single `INSERT` (parser-validated); returns rows affected. Required: `statement`. |
+| `create_table` | Execute a single `CREATE TABLE` statement. Required: `statement`. |
+| `insert_rows` | Execute a single `INSERT` statement; returns rows affected. Required: `statement`. |
+| `update_rows` | Execute a single `UPDATE` statement; a `WHERE` clause is mandatory. Returns rows affected. Required: `statement`. |
+| `delete_rows` | Execute a single `DELETE` statement; a `WHERE` clause is mandatory. Returns rows affected. Required: `statement`. |
+
+Any write tool that includes a `RETURNING` clause returns the affected rows instead of just the count.
 
 ## Testing
 
