@@ -44,3 +44,8 @@ Thanks for your interest! This guide covers what you need to send a PR.
 
 Use [GitHub Issues](https://github.com/cockroachdb/cockroachdb-mcp-server/issues)
 for non-security bugs. For security issues, see [SECURITY.md](SECURITY.md).
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the
+[Apache-2.0 License](LICENSE).
