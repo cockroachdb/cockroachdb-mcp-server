@@ -1,4 +1,6 @@
 // Package logging wires the structured logger used by the MCP server.
+// Log-trace correlation is opt-in: only records emitted via L(ctx) carry the
+// active span's trace context.
 package logging
 
 import (
