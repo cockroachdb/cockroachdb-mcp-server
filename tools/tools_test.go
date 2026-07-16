@@ -10,9 +10,14 @@ import (
 )
 
 func TestRegisterToolsGating(t *testing.T) {
-	writeTools := []string{"create_database", "create_table", "insert_rows"}
+	readTools := []string{
+		"list_databases", "list_tables", "get_table_schema", "get_cluster",
+		"list_sql_users", "list_cluster_nodes", "show_running_queries",
+		"select_query", "explain_query", "show_statement",
+	}
+	writeTools := []string{"create_database", "create_table", "insert_rows", "update_rows", "delete_rows"}
 
-	listToolNames := func(t *testing.T, enableWrites bool) map[string]bool {
+	listTools := func(t *testing.T, enableWrites bool) map[string]*mcp.Tool {
 		t.Helper()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -32,24 +37,52 @@ func TestRegisterToolsGating(t *testing.T) {
 
 		res, err := cs.ListTools(ctx, nil)
 		require.NoError(t, err)
-		registered := make(map[string]bool, len(res.Tools))
+		registered := make(map[string]*mcp.Tool, len(res.Tools))
 		for _, tool := range res.Tools {
-			registered[tool.Name] = true
+			registered[tool.Name] = tool
 		}
 		return registered
 	}
 
 	t.Run("write tools absent when EnableWriteQueries=false", func(t *testing.T) {
-		registered := listToolNames(t, false)
+		registered := listTools(t, false)
 		for _, name := range writeTools {
-			require.Falsef(t, registered[name], "write tool %q should not be registered", name)
+			require.NotContainsf(t, registered, name, "write tool %q should not be registered", name)
 		}
 	})
 
 	t.Run("write tools present when EnableWriteQueries=true", func(t *testing.T) {
-		registered := listToolNames(t, true)
+		registered := listTools(t, true)
 		for _, name := range writeTools {
-			require.Truef(t, registered[name], "write tool %q should be registered", name)
+			require.Containsf(t, registered, name, "write tool %q should be registered", name)
+		}
+	})
+
+	t.Run("read tools annotated read-only", func(t *testing.T) {
+		registered := listTools(t, true)
+		for _, name := range readTools {
+			require.Containsf(t, registered, name, "read tool %q should be registered", name)
+			require.NotNilf(t, registered[name].Annotations, "read tool %q should carry annotations", name)
+			require.Truef(t, registered[name].Annotations.ReadOnlyHint, "read tool %q should hint read-only", name)
+		}
+	})
+
+	t.Run("write tools never annotated read-only", func(t *testing.T) {
+		registered := listTools(t, true)
+		for _, name := range writeTools {
+			if a := registered[name].Annotations; a != nil {
+				require.Falsef(t, a.ReadOnlyHint, "write tool %q must not hint read-only", name)
+			}
+		}
+	})
+
+	t.Run("row mutation tools annotated destructive", func(t *testing.T) {
+		registered := listTools(t, true)
+		for _, name := range []string{"update_rows", "delete_rows"} {
+			a := registered[name].Annotations
+			require.NotNilf(t, a, "tool %q should carry annotations", name)
+			require.NotNilf(t, a.DestructiveHint, "tool %q should set a destructive hint", name)
+			require.Truef(t, *a.DestructiveHint, "tool %q should hint destructive", name)
 		}
 	})
 }

@@ -23,10 +23,11 @@ jobs:
       id-token: write
     if: >
       github.event_name == 'workflow_dispatch' ||
-      (github.event.action == 'synchronize' && !github.event.pull_request.draft) ||
-      (github.event.action == 'opened' && !github.event.pull_request.draft) ||
-      github.event.action == 'ready_for_review'
-    uses: cockroachlabs/roachdev/.github/workflows/ai-review.yml@main
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       ((github.event.action == 'synchronize' && !github.event.pull_request.draft) ||
+        (github.event.action == 'opened' && !github.event.pull_request.draft) ||
+        github.event.action == 'ready_for_review'))
+    uses: cockroachlabs/roachdev/.github/workflows/ai-review.yml@2ed722f4f6bff64a0f87f277b24992015af2f3d8 # main as of 2026-07-15
     with:
       pr_number: ${{ fromJSON(github.event.inputs.pr_number || github.event.pull_request.number) }}
     secrets: inherit
