@@ -389,7 +389,7 @@ func (c *Config) InsecureDB() bool {
 	return insecureCapableSSLMode(c.SSLMode)
 }
 
-// validateHTTPTLS enforces the SECSERV-422 default-secure policy: HTTP mode
+// validateHTTPTLS enforces the default-secure policy: HTTP mode
 // must serve TLS unless the operator explicitly opts into cleartext via
 // CRDB_MCP_ALLOW_INSECURE_HTTP=true. Cert and key are required together, and
 // any path provided must exist on disk.

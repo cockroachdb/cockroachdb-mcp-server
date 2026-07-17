@@ -33,54 +33,66 @@ func NewToolHandlers(dm DBManager, cfg *config.Config) *ToolHandlers {
 // each tool's schema from its typed params struct (jsonschema tags) and
 // validates input upstream.
 func (h *ToolHandlers) RegisterTools(server *mcp.Server) {
+	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
+
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_databases",
 		Description: "List all databases in the CockroachDB cluster.",
+		Annotations: readOnly,
 	}, h.listDatabases)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_tables",
 		Description: "List all tables in a database.",
+		Annotations: readOnly,
 	}, h.listTables)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_table_schema",
 		Description: "Get detailed schema information for a table including columns and indexes.",
+		Annotations: readOnly,
 	}, h.getTableSchema)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "show_running_queries",
 		Description: "List in-flight SQL statements on the CockroachDB cluster.",
+		Annotations: readOnly,
 	}, h.showRunningQueries)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_cluster",
 		Description: "Return CockroachDB cluster identity and version metadata.",
+		Annotations: readOnly,
 	}, h.getCluster)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_sql_users",
 		Description: "List SQL users defined in the CockroachDB cluster.",
+		Annotations: readOnly,
 	}, h.listSQLUsers)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_cluster_nodes",
 		Description: "List CockroachDB cluster nodes with address, liveness, and locality. Requires admin or VIEWCLUSTERMETADATA.",
+		Annotations: readOnly,
 	}, h.listClusterNodes)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "select_query",
 		Description: "Execute a single SELECT statement.",
+		Annotations: readOnly,
 	}, h.selectQuery)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "explain_query",
 		Description: "Return the EXPLAIN plan for a single SQL statement.",
+		Annotations: readOnly,
 	}, h.explainQuery)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "show_statement",
 		Description: "Execute a single SHOW statement.",
+		Annotations: readOnly,
 	}, h.showStatement)
 
 	// Write tools are only enabled when CRDB_MCP_ENABLE_WRITE_QUERIES=true.
@@ -100,17 +112,16 @@ func (h *ToolHandlers) RegisterTools(server *mcp.Server) {
 			Description: "Execute a single INSERT statement. Returns the number of rows affected.",
 		}, h.insertRows)
 
-		destructive := true
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "update_rows",
 			Description: "Execute a single UPDATE statement with a mandatory WHERE clause. Returns the number of rows affected.",
-			Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive},
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true)},
 		}, h.updateRows)
 
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "delete_rows",
 			Description: "Execute a single DELETE statement with a mandatory WHERE clause. Returns the number of rows affected.",
-			Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive, IdempotentHint: true},
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true},
 		}, h.deleteRows)
 	}
 }

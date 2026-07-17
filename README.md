@@ -19,7 +19,7 @@ tools by default; write and DDL tools opt in via env var.
 
 ## Install
 
-Requires Go 1.25+ and a reachable CockroachDB cluster.
+Requires Go 1.26+ and a reachable CockroachDB cluster.
 
 ```bash
 go install github.com/cockroachdb/cockroachdb-mcp-server@latest
@@ -249,7 +249,8 @@ the server's environment:
 ## Tools
 
 Grant the connecting SQL role only the privileges the registered tools need.
-Avoid admin and write privileges unless write tools are explicitly registered.
+Avoid admin and write privileges unless write tools are explicitly registered;
+see [Security](#security) for a role recipe.
 
 `CRDB_MCP_ENABLE_WRITE_QUERIES` enables all write tools together. For
 per-operation control, grant the connecting role only the SQL privileges you
@@ -303,6 +304,28 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Security
 
 Report vulnerabilities via [SECURITY.md](SECURITY.md).
+
+### Security model
+
+The server validates statement shape (a single statement per call, a
+mandatory `WHERE` clause on `UPDATE` and `DELETE`) but does not restrict
+which databases, schemas, or tables a statement may target. Every tool call
+runs with the full privileges of the connecting SQL role: the role, not the
+server, is the security boundary.
+
+Connect as a dedicated role scoped to just what the agent needs, never as
+`root` or an `admin` member; see
+[`CREATE ROLE`](https://www.cockroachlabs.com/docs/stable/create-role),
+[`GRANT`](https://www.cockroachlabs.com/docs/stable/grant), and the
+[authorization overview](https://www.cockroachlabs.com/docs/stable/security-reference/authorization).
+Grant `SELECT` on the tables the agent should see, add DML privileges per
+table only when write mode is on, and `GRANT SYSTEM VIEWACTIVITYREDACTED,
+VIEWCLUSTERMETADATA` if the cluster introspection tools are needed.
+
+Note that the server cannot tell an operator-intended tool call from one
+induced by attacker-controlled content the agent has read (prompt
+injection); the role scoping above is the containment for that. MCP tool
+annotations are hints to the client, not a server-side control.
 
 ## License
 
