@@ -264,7 +264,7 @@ writes without deletes.
 | `list_databases` | List all databases. Optional `limit` (default 100, max 10000) and `offset`. |
 | `list_tables` | List tables in a database. Required: `database`. Optional: `limit`, `offset`. |
 | `get_table_schema` | Return the `CREATE TABLE` for a table. Required: `database`, `table`. Optional: `schema` (default `public`). |
-| `get_cluster` | Cluster identity and version metadata: cluster_id, cluster_name, binary_version, active_version. |
+| `get_cluster` | Cluster identity and version metadata: cluster_id, cluster_name, binary_version. Identity fields need `crdb_internal` access (restricted by default on v25.4+); when unavailable they are null with the reason under `unavailable`. |
 | `list_sql_users` | SQL users in the cluster. Optional: `limit`, `offset`. |
 | `list_cluster_nodes` | Cluster nodes with address, liveness, locality. Requires admin or `VIEWCLUSTERMETADATA`. |
 | `show_running_queries` | Currently executing statements, ordered by start time descending. Optional: `limit`, `offset`. |

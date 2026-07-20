@@ -6,6 +6,7 @@ import (
 
 	"github.com/cockroachdb/cockroachdb-mcp-server/config"
 	"github.com/cockroachdb/cockroachdb-mcp-server/db"
+	"github.com/cockroachdb/errors"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 )
@@ -52,4 +53,30 @@ func (f *fakeQuerier) Query(_ context.Context, sql string) (*db.QueryResult, err
 func (f *fakeQuerier) Exec(_ context.Context, sql string) (int64, error) {
 	f.execs = append(f.execs, sql)
 	return f.rowsAffected, f.err
+}
+
+// scriptedStep is one canned Query response for scriptedQuerier.
+type scriptedStep struct {
+	result *db.QueryResult
+	err    error
+}
+
+// scriptedQuerier is a DBManager test double that replays a fixed sequence
+// of Query responses, one per call, recording the SQL it receives.
+type scriptedQuerier struct {
+	queries []string
+	steps   []scriptedStep
+}
+
+func (s *scriptedQuerier) Query(_ context.Context, sql string) (*db.QueryResult, error) {
+	i := len(s.queries)
+	s.queries = append(s.queries, sql)
+	if i >= len(s.steps) {
+		return nil, errors.Newf("unexpected query %d: %s", i, sql)
+	}
+	return s.steps[i].result, s.steps[i].err
+}
+
+func (s *scriptedQuerier) Exec(context.Context, string) (int64, error) {
+	return 0, errors.New("unexpected exec")
 }

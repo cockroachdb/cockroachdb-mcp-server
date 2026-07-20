@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 
+	"github.com/cockroachdb/cockroachdb-mcp-server/db"
 	"github.com/cockroachdb/errors"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -19,6 +20,11 @@ func (h *ToolHandlers) listClusterNodes(
 ) (*mcp.CallToolResult, any, error) {
 	res, err := h.dm.Query(ctx, listClusterNodesQuery)
 	if err != nil {
+		if db.IsInsufficientPrivilege(err) {
+			return nil, nil, errors.Wrap(err,
+				"list cluster nodes: access denied; requires admin or VIEWCLUSTERMETADATA, or "+
+					restrictedInternalsMsg)
+		}
 		return nil, nil, errors.Wrap(err, "list cluster nodes")
 	}
 	result, err := queryResultToMCP(res)

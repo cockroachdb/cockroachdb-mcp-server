@@ -4,10 +4,32 @@ import (
 	"context"
 	"testing"
 
+	"github.com/cockroachdb/errors"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
 
 const testDSN = "postgresql://root@localhost:26257/defaultdb?sslmode=require"
+
+func TestIsInsufficientPrivilege(t *testing.T) {
+	t.Run("wrapped 42501 is detected", func(t *testing.T) {
+		err := errors.Wrap(&pgconn.PgError{Code: "42501"}, "exec query")
+		require.True(t, IsInsufficientPrivilege(err))
+	})
+
+	t.Run("other pg codes are not", func(t *testing.T) {
+		err := errors.Wrap(&pgconn.PgError{Code: "42P01"}, "exec query")
+		require.False(t, IsInsufficientPrivilege(err))
+	})
+
+	t.Run("non-pg errors are not", func(t *testing.T) {
+		require.False(t, IsInsufficientPrivilege(errors.New("connection refused")))
+	})
+
+	t.Run("nil error is not", func(t *testing.T) {
+		require.False(t, IsInsufficientPrivilege(nil))
+	})
+}
 
 func TestNewAdapterPasswordAuth(t *testing.T) {
 	const baseDSN = "postgres://root@127.0.0.1:1/defaultdb?sslmode=disable&connect_timeout=1"
