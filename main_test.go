@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cockroachdb/cockroachdb-mcp-server/config"
+	"github.com/cockroachdb/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -112,4 +113,25 @@ func TestRunHTTPShutdown(t *testing.T) {
 	case <-time.After(shutdownPeriod + time.Second):
 		t.Fatal("runHTTP did not return after context cancel")
 	}
+}
+
+func TestConfigErrorMessage(t *testing.T) {
+	err := errors.Newf("no database connection configured: either set %s to a connection string", "CRDB_DATABASE_URL")
+	msg := configErrorMessage(err)
+
+	t.Run("mentions server name and cause", func(t *testing.T) {
+		require.Contains(t, msg, serverName)
+		require.Contains(t, msg, "invalid configuration")
+		require.Contains(t, msg, err.Error())
+	})
+
+	t.Run("points at the README configuration docs", func(t *testing.T) {
+		require.Contains(t, msg, "https://github.com/cockroachdb/cockroachdb-mcp-server#configuration")
+	})
+
+	t.Run("carries no stack trace or structured noise", func(t *testing.T) {
+		require.NotContains(t, msg, "stack trace")
+		require.NotContains(t, msg, "errorVerbose")
+		require.NotContains(t, msg, `"level"`)
+	})
 }

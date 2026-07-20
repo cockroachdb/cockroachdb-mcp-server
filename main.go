@@ -46,7 +46,13 @@ func main() {
 		return
 	}
 
-	// Bootstrap logger keeps config-load fatals visible. Stderr-only so a
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Fprint(os.Stderr, configErrorMessage(err))
+		os.Exit(1)
+	}
+
+	// Bootstrap logger keeps pre-run fatals visible. Stderr-only so a
 	// bad CRDB_MCP_LOG_PATH can't swallow its own error.
 	bootstrap, err := logging.NewLogger(zapcore.InfoLevel, "")
 	if err != nil {
@@ -55,22 +61,26 @@ func main() {
 	}
 	zap.ReplaceGlobals(bootstrap)
 
-	if err := run(); err != nil {
+	if err := run(cfg); err != nil {
+		if errors.Is(err, db.ErrInvalidConfig) {
+			fmt.Fprint(os.Stderr, configErrorMessage(err))
+			os.Exit(1)
+		}
 		zap.L().Error("fatal", zap.Error(err))
 		_ = zap.L().Sync()
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	cfg, err := config.Load()
-	if err != nil {
-		return errors.Wrap(err, "load config")
-	}
+func configErrorMessage(err error) string {
+	return fmt.Sprintf("%s: invalid configuration: %v\n\nSee the Configuration section of the README:\nhttps://github.com/cockroachdb/cockroachdb-mcp-server#configuration\n",
+		serverName, err)
+}
 
+func run(cfg *config.Config) error {
 	logger, err := logging.NewLogger(cfg.LogLevel, cfg.LogPath)
 	if err != nil {
-		return errors.Wrapf(err, "open log path %q", cfg.LogPath)
+		return errors.Mark(errors.Wrapf(err, "open log path %q", cfg.LogPath), db.ErrInvalidConfig)
 	}
 	zap.ReplaceGlobals(logger)
 	defer func() { _ = logger.Sync() }()

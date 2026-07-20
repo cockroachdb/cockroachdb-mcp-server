@@ -355,8 +355,9 @@ func loadCertConfig(cfg *Config) (*Config, error) {
 		}
 	}
 	if len(missing) > 0 {
-		return nil, errors.Newf("set %s or provide cert env vars; missing: %v",
-			envDatabaseURL, missing)
+		return nil, errors.Newf(
+			"no database connection configured: either set %s to a connection string, or finish the cert-based setup by also setting %s",
+			envDatabaseURL, strings.Join(missing, ", "))
 	}
 
 	for label, path := range map[string]string{

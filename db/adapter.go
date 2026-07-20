@@ -34,11 +34,9 @@ const (
 	insufficientPrivilegeCode = "42501"
 )
 
-// IsInsufficientPrivilege reports whether err carries SQLSTATE 42501.
-func IsInsufficientPrivilege(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == insufficientPrivilegeCode
-}
+// ErrInvalidConfig marks operator configuration errors that should surface as
+// a clean stderr message rather than a structured log entry.
+var ErrInvalidConfig = errors.New("invalid adapter configuration")
 
 // Adapter centralizes connection pooling and SQL execution against CockroachDB.
 type Adapter struct {
@@ -90,17 +88,17 @@ func NewAdapter(ctx context.Context, cfg Config) (*Adapter, error) {
 // defaults applied here are unit-testable without a live database.
 func buildPoolConfig(cfg Config) (*pgxpool.Config, error) {
 	if cfg.DSN == "" {
-		return nil, errors.New("DSN cannot be empty")
+		return nil, errors.Mark(errors.New("DSN cannot be empty"), ErrInvalidConfig)
 	}
 
 	poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
 	if err != nil {
-		return nil, errors.Wrap(err, "parse pool config")
+		return nil, errors.Mark(errors.Wrap(err, "parse pool config"), ErrInvalidConfig)
 	}
 	if poolCfg.ConnConfig.Password != "" && !cfg.AllowPasswordAuth {
-		return nil, errors.New(
+		return nil, errors.Mark(errors.New(
 			"password-based auth is disabled; set CRDB_MCP_ALLOW_PASSWORD_AUTH=true to enable, or use cert-based auth",
-		)
+		), ErrInvalidConfig)
 	}
 	if _, ok := poolCfg.ConnConfig.RuntimeParams["application_name"]; !ok {
 		poolCfg.ConnConfig.RuntimeParams["application_name"] = defaultApplicationName
@@ -200,6 +198,12 @@ func (a *Adapter) Exec(ctx context.Context, sql string) (_ int64, err error) {
 	}
 	span.SetAttributes(attribute.Int64("db.response.affected_rows", tag.RowsAffected()))
 	return tag.RowsAffected(), nil
+}
+
+// IsInsufficientPrivilege reports whether err carries SQLSTATE 42501.
+func IsInsufficientPrivilege(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == insufficientPrivilegeCode
 }
 
 // startSQLSpan is a no-op until otel.Setup installs an exporter. When no
