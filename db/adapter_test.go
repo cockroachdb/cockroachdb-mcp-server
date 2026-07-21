@@ -41,6 +41,7 @@ func TestNewAdapterPasswordAuth(t *testing.T) {
 		_, err := NewAdapter(context.Background(), Config{DSN: inlinePasswordDSN})
 		require.Error(t, err, "expected error for inline password without opt-in")
 		require.Containsf(t, err.Error(), rejectMsg, "error should flag password-auth rejection: %v", err)
+		require.True(t, errors.Is(err, ErrInvalidConfig), "password rejection should be marked as config error")
 	})
 
 	t.Run("rejects PGPASSWORD env without opt-in", func(t *testing.T) {
@@ -49,6 +50,7 @@ func TestNewAdapterPasswordAuth(t *testing.T) {
 		_, err := NewAdapter(context.Background(), Config{DSN: baseDSN})
 		require.Error(t, err, "expected error for PGPASSWORD without opt-in")
 		require.Containsf(t, err.Error(), rejectMsg, "error should flag password-auth rejection: %v", err)
+		require.True(t, errors.Is(err, ErrInvalidConfig), "password rejection should be marked as config error")
 	})
 
 	t.Run("inline password with opt-in proceeds past the auth gate", func(t *testing.T) {
@@ -59,6 +61,7 @@ func TestNewAdapterPasswordAuth(t *testing.T) {
 		})
 		require.Error(t, err, "connect to port 1 should fail")
 		require.NotContains(t, err.Error(), rejectMsg, "opt-in should bypass the password gate")
+		require.False(t, errors.Is(err, ErrInvalidConfig), "connectivity failures are not config errors")
 	})
 
 	t.Run("invalid DSN surfaces parse error before password check", func(t *testing.T) {
@@ -78,6 +81,7 @@ func TestBuildPoolConfig(t *testing.T) {
 	t.Run("invalid DSN is rejected", func(t *testing.T) {
 		_, err := buildPoolConfig(Config{DSN: "::not a url"})
 		require.Error(t, err)
+		require.True(t, errors.Is(err, ErrInvalidConfig), "DSN parse failure should be marked as config error")
 	})
 
 	t.Run("application_name from DSN is preserved", func(t *testing.T) {
