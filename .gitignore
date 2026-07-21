@@ -22,4 +22,4 @@ Thumbs.db
 *.log
 
 # Local CockroachDB node data
-/cockroach-data/
+/cockroach-data*/

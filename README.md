@@ -4,6 +4,12 @@
 
 # CockroachDB MCP Server
 
+[![CI](https://github.com/cockroachdb/cockroachdb-mcp-server/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/cockroachdb/cockroachdb-mcp-server/actions/workflows/ci.yaml)
+[![Release](https://img.shields.io/github/v/release/cockroachdb/cockroachdb-mcp-server?include_prereleases)](https://github.com/cockroachdb/cockroachdb-mcp-server/releases)
+[![Go Reference](https://pkg.go.dev/badge/github.com/cockroachdb/cockroachdb-mcp-server.svg)](https://pkg.go.dev/github.com/cockroachdb/cockroachdb-mcp-server)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/cockroachdb/cockroachdb-mcp-server)](go.mod)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
+
 CockroachDB MCP Server is a [Model Context Protocol](https://modelcontextprotocol.io)
 server that exposes CockroachDB to AI agents as a set of typed tools. Ships read
 tools by default; write and DDL tools opt in via env var.
@@ -32,6 +38,18 @@ The binary lands in `$(go env GOPATH)/bin/cockroachdb-mcp-server`.
 Grab a tarball for `linux/{amd64,arm64}` or `windows/{amd64,arm64}` from
 [Releases](https://github.com/cockroachdb/cockroachdb-mcp-server/releases),
 available from the first release onwards.
+
+### Docker
+
+Multi-arch images (`linux/amd64`, `linux/arm64`) are published to Google
+Artifact Registry on every release:
+
+```bash
+docker pull us-docker.pkg.dev/releases-prod/cockroachdb-mcp-server/cockroachdb-mcp-server:<version>
+```
+
+The image runs as `nonroot` on [distroless](https://github.com/GoogleContainerTools/distroless).
+macOS users on Apple Silicon can run the `linux/arm64` image natively via Docker.
 
 ### Build from source
 
