@@ -58,31 +58,61 @@ func TestRegisterToolsGating(t *testing.T) {
 		}
 	})
 
-	t.Run("read tools annotated read-only", func(t *testing.T) {
+	t.Run("read tools annotated read-only and closed-world", func(t *testing.T) {
 		registered := listTools(t, true)
 		for _, name := range readTools {
 			require.Containsf(t, registered, name, "read tool %q should be registered", name)
-			require.NotNilf(t, registered[name].Annotations, "read tool %q should carry annotations", name)
-			require.Truef(t, registered[name].Annotations.ReadOnlyHint, "read tool %q should hint read-only", name)
+			a := registered[name].Annotations
+			require.NotNilf(t, a, "read tool %q should carry annotations", name)
+			require.Truef(t, a.ReadOnlyHint, "read tool %q should hint read-only", name)
+			require.NotNilf(t, a.OpenWorldHint, "read tool %q should set openWorldHint", name)
+			require.Falsef(t, *a.OpenWorldHint, "read tool %q should hint closed-world", name)
 		}
 	})
 
-	t.Run("write tools never annotated read-only", func(t *testing.T) {
+	t.Run("write tools carry full annotations", func(t *testing.T) {
 		registered := listTools(t, true)
 		for _, name := range writeTools {
-			if a := registered[name].Annotations; a != nil {
-				require.Falsef(t, a.ReadOnlyHint, "write tool %q must not hint read-only", name)
-			}
+			a := registered[name].Annotations
+			require.NotNilf(t, a, "write tool %q should carry annotations", name)
+			require.Falsef(t, a.ReadOnlyHint, "write tool %q must not hint read-only", name)
+			require.NotNilf(t, a.OpenWorldHint, "write tool %q should set openWorldHint", name)
+			require.Falsef(t, *a.OpenWorldHint, "write tool %q should hint closed-world", name)
+			require.NotNilf(t, a.DestructiveHint, "write tool %q should set destructiveHint", name)
 		}
 	})
 
-	t.Run("row mutation tools annotated destructive", func(t *testing.T) {
+	t.Run("destructive hints match tool semantics", func(t *testing.T) {
 		registered := listTools(t, true)
-		for _, name := range []string{"update_rows", "delete_rows"} {
-			a := registered[name].Annotations
-			require.NotNilf(t, a, "tool %q should carry annotations", name)
-			require.NotNilf(t, a.DestructiveHint, "tool %q should set a destructive hint", name)
-			require.Truef(t, *a.DestructiveHint, "tool %q should hint destructive", name)
+		for _, tc := range []struct {
+			name        string
+			destructive bool
+		}{
+			{"create_database", false},
+			{"create_table", false},
+			{"insert_rows", true},
+			{"update_rows", true},
+			{"delete_rows", true},
+		} {
+			a := registered[tc.name].Annotations
+			require.Equalf(t, tc.destructive, *a.DestructiveHint, "tool %q destructiveHint", tc.name)
+		}
+	})
+
+	t.Run("idempotent hints match tool semantics", func(t *testing.T) {
+		registered := listTools(t, true)
+		for _, tc := range []struct {
+			name       string
+			idempotent bool
+		}{
+			{"create_database", false},
+			{"create_table", false},
+			{"insert_rows", false},
+			{"update_rows", false},
+			{"delete_rows", true},
+		} {
+			a := registered[tc.name].Annotations
+			require.Equalf(t, tc.idempotent, a.IdempotentHint, "tool %q idempotentHint", tc.name)
 		}
 	})
 }

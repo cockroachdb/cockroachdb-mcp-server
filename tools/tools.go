@@ -33,7 +33,7 @@ func NewToolHandlers(dm DBManager, cfg *config.Config) *ToolHandlers {
 // each tool's schema from its typed params struct (jsonschema tags) and
 // validates input upstream.
 func (h *ToolHandlers) RegisterTools(server *mcp.Server) {
-	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
+	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: new(false)}
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_databases",
@@ -100,28 +100,31 @@ func (h *ToolHandlers) RegisterTools(server *mcp.Server) {
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "create_database",
 			Description: "Create a database.",
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: new(false), OpenWorldHint: new(false)},
 		}, h.createDatabase)
 
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "create_table",
 			Description: "Execute a single CREATE TABLE statement.",
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: new(false), OpenWorldHint: new(false)},
 		}, h.createTable)
 
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "insert_rows",
 			Description: "Execute a single INSERT statement. Returns the number of rows affected.",
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true), OpenWorldHint: new(false)},
 		}, h.insertRows)
 
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "update_rows",
 			Description: "Execute a single UPDATE statement with a mandatory WHERE clause. Returns the number of rows affected.",
-			Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true)},
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true), OpenWorldHint: new(false)},
 		}, h.updateRows)
 
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "delete_rows",
 			Description: "Execute a single DELETE statement with a mandatory WHERE clause. Returns the number of rows affected.",
-			Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true},
+			Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true, OpenWorldHint: new(false)},
 		}, h.deleteRows)
 	}
 }
