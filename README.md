@@ -73,7 +73,7 @@ equivalent; see your client's docs for the file location.
 > not expand `~`, so a bare `command` may not resolve; use the absolute
 > binary path instead, e.g. `/Users/<username>/go/bin/cockroachdb-mcp-server`.
 
-### stdio + cert-based auth (recommended)
+### Stdio + cert-based auth (recommended)
 
 ```json
 {
@@ -93,7 +93,7 @@ equivalent; see your client's docs for the file location.
 }
 ```
 
-### stdio + full connection string
+### Stdio + full connection string
 
 ```json
 {
@@ -108,7 +108,7 @@ equivalent; see your client's docs for the file location.
 }
 ```
 
-### stdio + local insecure cluster (development only, writes enabled)
+### Stdio + local insecure cluster (development only, writes enabled)
 
 For a local `cockroach start-single-node --insecure` or `cockroach demo --insecure`
 cluster, opt in to a TLS-free connection; no cert files are needed:
@@ -176,11 +176,20 @@ All configuration is via environment variables.
 
 ### Authentication
 
-Cert-based auth is recommended in stdio mode. The server runs as a subprocess
-of the AI agent host, which can read `CRDB_PWD`, a password embedded in
-`CRDB_DATABASE_URL`, `PGPASSWORD`, or `~/.pgpass` from this process's
-environment. To protect those credentials, password-based auth is rejected by
-default. Set `CRDB_MCP_ALLOW_PASSWORD_AUTH=true` to opt in.
+**Stdio mode:** The server runs as a subprocess of the AI agent host.
+Cert-based auth is recommended. The server can read `CRDB_PWD`,
+a password embedded in `CRDB_DATABASE_URL`, `PGPASSWORD`, or `~/.pgpass`
+from its process environment.
+To protect those credentials, password-based auth is rejected by default.
+Set `CRDB_MCP_ALLOW_PASSWORD_AUTH=true` to opt in.
+
+**HTTP mode:** Clients authenticate to the MCP server with a bearer token
+(`CRDB_MCP_BEARER_TOKEN`) - see [HTTPS setup](#https-shared--remote-deployments)
+for token generation. TLS is required by default; cleartext HTTP
+requires `CRDB_MCP_ALLOW_INSECURE_HTTP=true` (for deployments behind a
+TLS-terminating reverse proxy). Organizations that handle auth upstream
+(reverse proxy, gateway, mTLS) can set `CRDB_MCP_ALLOW_NO_BEARER=true`
+to skip bearer enforcement.
 
 `CRDB_DATABASE_URL` (a full libpq connection string) takes precedence over the
 split vars below. In both auth modes `sslmode` must be `require`, `verify-ca`,
