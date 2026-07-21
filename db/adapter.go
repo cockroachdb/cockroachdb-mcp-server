@@ -93,7 +93,10 @@ func buildPoolConfig(cfg Config) (*pgxpool.Config, error) {
 
 	poolCfg, err := pgxpool.ParseConfig(cfg.DSN)
 	if err != nil {
-		return nil, errors.Mark(errors.Wrap(err, "parse pool config"), ErrInvalidConfig)
+		return nil, errors.Mark(
+			errors.New("parse pool config: invalid connection string"),
+			ErrInvalidConfig,
+		)
 	}
 	if poolCfg.ConnConfig.Password != "" && !cfg.AllowPasswordAuth {
 		return nil, errors.Mark(errors.New(

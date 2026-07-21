@@ -303,7 +303,7 @@ func (c *Config) DSN() string {
 func validateDatabaseURL(cfg *Config) error {
 	u, err := url.Parse(cfg.DatabaseURL)
 	if err != nil {
-		return errors.Wrapf(err, "%s is not a valid URL", envDatabaseURL)
+		return errors.Newf("%s is not a valid URL", envDatabaseURL)
 	}
 	mode := u.Query().Get("sslmode")
 	if mode == "" {

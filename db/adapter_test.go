@@ -84,6 +84,13 @@ func TestBuildPoolConfig(t *testing.T) {
 		require.True(t, errors.Is(err, ErrInvalidConfig), "DSN parse failure should be marked as config error")
 	})
 
+	t.Run("invalid DSN does not leak connection string in error", func(t *testing.T) {
+		dsn := "postgres://user:s3cret@host:notaport/db"
+		_, err := buildPoolConfig(Config{DSN: dsn})
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "s3cret", "error must not leak password")
+	})
+
 	t.Run("application_name from DSN is preserved", func(t *testing.T) {
 		pc, err := buildPoolConfig(Config{DSN: testDSN + "&application_name=custom"})
 		require.NoError(t, err)
