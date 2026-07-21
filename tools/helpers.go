@@ -12,6 +12,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// restrictedInternalsMsg explains SQLSTATE 42501 from crdb_internal surfaces
+// gated on CockroachDB v25.4+.
+const restrictedInternalsMsg = "the cluster restricts access to crdb_internal " +
+	"(allow_unsafe_internals is off)"
+
 // defaultRowLimit is the LIMIT applied to list-style tools when the caller
 // does not supply one. The hard ceiling is config.MaxRowsCount.
 const defaultRowLimit int64 = 100
@@ -197,7 +202,8 @@ func validateShowStatement(stmt tree.Statement) error {
 	return nil
 }
 
-// MCPQueryResult is the response shape returned by read tools.
+// MCPQueryResult is the rows-shaped response returned by tabular read tools;
+// get_cluster returns a flat object via writeOK instead.
 type MCPQueryResult struct {
 	Rows []json.RawMessage `json:"rows"`
 }
@@ -255,7 +261,7 @@ func mutationOK(table string, rowsAffected int64, qr *db.QueryResult) (*mcp.Call
 	return writeOK(payload)
 }
 
-// writeOK renders a write-tool success payload as an MCP tool response.
+// writeOK renders a structured success payload as an MCP tool response.
 func writeOK(payload map[string]any) (*mcp.CallToolResult, any, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {

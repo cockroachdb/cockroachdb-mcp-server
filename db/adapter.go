@@ -10,6 +10,7 @@ import (
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
 	"github.com/cockroachdb/errors"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -29,8 +30,15 @@ const (
 	// defaultTxnQoS is applied when neither cfg.TxnQoS nor the DSN specifies
 	// one. "background" tells CRDB's admission control to yield to
 	// latency-sensitive foreground SQL.
-	defaultTxnQoS = "background"
+	defaultTxnQoS             = "background"
+	insufficientPrivilegeCode = "42501"
 )
+
+// IsInsufficientPrivilege reports whether err carries SQLSTATE 42501.
+func IsInsufficientPrivilege(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == insufficientPrivilegeCode
+}
 
 // Adapter centralizes connection pooling and SQL execution against CockroachDB.
 type Adapter struct {

@@ -61,7 +61,7 @@ func (h *ToolHandlers) RegisterTools(server *mcp.Server) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_cluster",
-		Description: "Return CockroachDB cluster identity and version metadata.",
+		Description: "Return CockroachDB cluster identity and version metadata. Restricted fields are null with the reason in 'unavailable'.",
 		Annotations: readOnly,
 	}, h.getCluster)
 
