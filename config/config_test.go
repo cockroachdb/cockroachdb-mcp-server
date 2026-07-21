@@ -521,6 +521,14 @@ func TestLoadDatabaseURL(t *testing.T) {
 		require.Equal(t, raw, cfg.DSN())
 	})
 
+	t.Run("malformed URL does not leak credentials in error", func(t *testing.T) {
+		clearEnv(t)
+		t.Setenv(envDatabaseURL, "postgresql://user:s3cret@host:notaport/db")
+		_, err := Load()
+		require.Error(t, err)
+		require.NotContains(t, err.Error(), "s3cret", "error must not leak password")
+	})
+
 	t.Run("rejects URL with disallowed sslmode", func(t *testing.T) {
 		clearEnv(t)
 		t.Setenv(envDatabaseURL, "postgresql://root@host:26257/defaultdb?sslmode=disable")
