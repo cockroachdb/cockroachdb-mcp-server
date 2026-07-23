@@ -48,6 +48,12 @@ Artifact Registry on every release:
 docker pull us-docker.pkg.dev/releases-prod/cockroachdb-mcp-server/cockroachdb-mcp-server:<version>
 ```
 
+Replace `<version>` with a release listed on the [Releases page](https://github.com/cockroachdb/cockroachdb-mcp-server/releases), or list available image tags directly:
+
+```bash
+gcloud artifacts docker tags list us-docker.pkg.dev/releases-prod/cockroachdb-mcp-server/cockroachdb-mcp-server
+```
+
 The image runs as `nonroot` on [distroless](https://github.com/GoogleContainerTools/distroless).
 macOS users on Apple Silicon can run the `linux/arm64` image natively via Docker.
 
