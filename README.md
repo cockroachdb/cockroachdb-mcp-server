@@ -4,6 +4,8 @@
 
 # CockroachDB MCP Server
 
+
+
 [![CI](https://github.com/cockroachdb/cockroachdb-mcp-server/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/cockroachdb/cockroachdb-mcp-server/actions/workflows/ci.yaml)
 [![Release](https://img.shields.io/github/v/release/cockroachdb/cockroachdb-mcp-server?include_prereleases)](https://github.com/cockroachdb/cockroachdb-mcp-server/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/cockroachdb/cockroachdb-mcp-server.svg)](https://pkg.go.dev/github.com/cockroachdb/cockroachdb-mcp-server)
