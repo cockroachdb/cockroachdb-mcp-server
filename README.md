@@ -1,5 +1,6 @@
 <p align="center">
-  <img src='docs/media/cockroachdb.png?raw=true' alt='CockroachDB' width='70%'>
+  <img src='docs/media/cockroach-labs-light.svg#gh-light-mode-only' alt='Cockroach Labs' width='600'>
+  <img src='docs/media/cockroach-labs-dark.svg#gh-dark-mode-only' alt='Cockroach Labs' width='600'>
 </p>
 
 # CockroachDB MCP Server
